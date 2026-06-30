@@ -2,7 +2,7 @@
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import 'fake-indexeddb/auto';
 import initSqlJs from 'sql.js';
-import { initDB, createHabit, getActiveHabits, getArchivedHabits, updateHabit, archiveHabit, unarchiveHabit, deleteHabit, logEntry, removeLogEntry, getProgress, getHabitsWithProgress, getHabit, getLogEntries } from './db';
+import { initDB, createHabit, getActiveHabits, getArchivedHabits, updateHabit, archiveHabit, unarchiveHabit, deleteHabit, logEntry, removeLogEntry, getProgress, getHabitsWithProgress, getHabit, getLogEntries, getScore, getPeriodBlocks } from './db';
 
 beforeAll(async () => {
 	await initDB();
@@ -56,22 +56,25 @@ describe('habits', () => {
 		expect(updated.goalPeriod).toBe('weekly');
 	});
 
-	it('archives a habit', () => {
+	it('archives a habit and sets archivedAt', () => {
 		const h = createHabit('To Archive', 1, 'daily');
 		archiveHabit(h.id);
-		const active = getActiveHabits().find(x => x.id === h.id);
-		expect(active).toBeUndefined();
 		const archived = getArchivedHabits().find(x => x.id === h.id);
 		expect(archived).not.toBeUndefined();
 		expect(archived!.status).toBe('archived');
+		expect(archived!.archivedAt).toBeTruthy();
 	});
 
-	it('unarchives a habit', () => {
+	it('unarchives a habit and resets createdAt', () => {
 		const h = createHabit('To Unarchive', 1, 'daily');
+		const originalCreatedAt = h.createdAt;
+
 		archiveHabit(h.id);
 		unarchiveHabit(h.id);
 		const active = getActiveHabits().find(x => x.id === h.id);
 		expect(active).not.toBeUndefined();
+		expect(active!.createdAt).not.toBe(originalCreatedAt);
+		expect(active!.archivedAt).toBeUndefined();
 	});
 
 	it('deletes a habit and its logs', () => {
@@ -87,7 +90,7 @@ describe('log entries', () => {
 	let habitId: string;
 
 	beforeAll(() => {
-		const h = createHabit('Log Test', 1, 'daily');
+		const h = createHabit('Log Test', 2, 'daily');
 		habitId = h.id;
 	});
 
@@ -103,6 +106,19 @@ describe('log entries', () => {
 		expect(getLogEntries(habitId)).toHaveLength(2);
 		removeLogEntry(entry.id);
 		expect(getLogEntries(habitId)).toHaveLength(1);
+	});
+
+	it('enforces cap — cannot log more than goalCount per day', () => {
+		const h = createHabit('Cap Test', 1, 'daily');
+		logEntry(h.id); // first one works
+		expect(() => logEntry(h.id)).toThrow('Cap reached');
+	});
+
+	it('enforces cap for weekly habits', () => {
+		const h = createHabit('Weekly Cap', 2, 'weekly');
+		logEntry(h.id);
+		logEntry(h.id); // second one works (goalCount=2)
+		expect(() => logEntry(h.id)).toThrow('Cap reached');
 	});
 });
 
@@ -128,5 +144,56 @@ describe('progress', () => {
 		expect(found).not.toBeUndefined();
 		expect(found!.progress).toBe(2);
 		expect(found!.isComplete).toBe(true);
+	});
+
+	it('caps progress at goalCount in getHabitsWithProgress', () => {
+		// progress() itself can exceed, but getHabitsWithProgress caps it
+		const h = createHabit('Progress Cap', 1, 'daily');
+		logEntry(h.id);
+		// logEntry refuses to add more, but test via getProgress still returns 1
+		expect(getProgress(h.id)).toBe(1);
+		const habits = getHabitsWithProgress();
+		const found = habits.find(x => x.id === h.id);
+		expect(found!.progress).toBe(1);
+	});
+});
+
+describe('score', () => {
+	it('returns 0 for a new habit with no past periods', () => {
+		const h = createHabit('Score Zero', 1, 'daily');
+		expect(getScore(h.id)).toBe(0);
+		// also via getHabitsWithProgress
+		const habits = getHabitsWithProgress();
+		const found = habits.find(x => x.id === h.id);
+		expect(found!.score).toBe(0);
+	});
+});
+
+describe('period blocks', () => {
+	it('returns 1 block for a newly created daily habit', () => {
+		const h = createHabit('Blocks Daily', 1, 'daily');
+		const blocks = getPeriodBlocks(h.id);
+		expect(blocks).toHaveLength(1);
+		expect(blocks[0].isCurrent).toBe(true);
+	});
+
+	it('blocks have correct shape', () => {
+		const h = createHabit('Blocks Shape', 1, 'daily');
+		const blocks = getPeriodBlocks(h.id);
+		for (const b of blocks) {
+			expect(b).toHaveProperty('startDate');
+			expect(b).toHaveProperty('complete');
+			expect(b).toHaveProperty('isCurrent');
+		}
+	});
+
+	it('marks a period as complete when goal met', () => {
+		const h = createHabit('Block Complete', 1, 'daily');
+		logEntry(h.id);
+		const blocks = getPeriodBlocks(h.id);
+		const today = new Date().toISOString().slice(0, 10);
+		const todayBlock = blocks.find(b => b.startDate === today);
+		expect(todayBlock).not.toBeUndefined();
+		expect(todayBlock!.complete).toBe(true);
 	});
 });

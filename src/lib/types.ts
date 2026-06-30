@@ -5,6 +5,7 @@ export interface Habit {
 	goalPeriod: 'daily' | 'weekly';
 	status: 'active' | 'archived' | 'deleted';
 	createdAt: string;
+	archivedAt?: string;
 }
 
 export interface LogEntry {
@@ -17,4 +18,11 @@ export interface LogEntry {
 export interface HabitWithProgress extends Habit {
 	progress: number;
 	isComplete: boolean;
+	score: number;
+}
+
+export interface PeriodBlock {
+	startDate: string;
+	complete: boolean;
+	isCurrent: boolean;
 }

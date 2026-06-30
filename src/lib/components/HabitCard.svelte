@@ -1,53 +1,61 @@
 <script lang="ts">
-	import type { HabitWithProgress } from '$lib/types';
+	import type { HabitWithProgress, PeriodBlock } from '$lib/types';
+	import { getPeriodBlocks } from '$lib/db';
 
-	let { habit, onlog }: { habit: HabitWithProgress; onlog: () => void } = $props();
+	let { habit, onlog, onremove }: { habit: HabitWithProgress; onlog: () => void; onremove: () => void } = $props();
 
-	const pct = $derived(Math.min((habit.progress / habit.goalCount) * 100, 100));
-	const barColor = $derived(habit.isComplete ? 'var(--color-green)' : 'var(--color-primary)');
+	let blocks = $derived(getPeriodBlocks(habit.id, 10));
 </script>
 
-<button class="card" class:complete={habit.isComplete} onclick={onlog}>
-	<div class="info">
-		<span class="name">{habit.name}</span>
-		<span class="meta">{habit.goalCount}/{habit.goalPeriod === 'daily' ? 'day' : 'week'}</span>
-	</div>
-	<div class="progress-row">
-		<div class="bar-track">
-			<div class="bar-fill" style="width: {pct}%; background: {barColor}"></div>
+<div class="card" class:complete={habit.isComplete}>
+	<div class="header">
+		<div class="info">
+			<span class="name">{habit.name}</span>
+			<span class="meta">{habit.goalCount}/{habit.goalPeriod === 'daily' ? 'day' : 'week'}</span>
 		</div>
-		<span class="count" class:done={habit.isComplete}>
-			{habit.progress}/{habit.goalCount}
-		</span>
+		<span class="score">Score: {habit.score}</span>
 	</div>
-</button>
+	<div class="grid">
+		{#each blocks as block (block.startDate)}
+			<div
+				class="block"
+				class:complete={block.complete}
+				class:current={block.isCurrent}
+				title="{block.startDate}: {block.complete ? 'goal met' : 'goal not met'}"
+			></div>
+		{/each}
+	</div>
+	<div class="actions">
+		<button class="btn-log" onclick={onlog} disabled={habit.isComplete} aria-label="Log entry">+</button>
+		<button class="btn-undo" onclick={onremove} aria-label="Remove last entry">−</button>
+	</div>
+</div>
 
 <style>
 	.card {
 		display: flex;
 		flex-direction: column;
-		gap: 8px;
+		gap: 10px;
 		width: 100%;
 		padding: 16px;
 		background: white;
 		border: 1px solid var(--color-gray-200);
 		border-radius: var(--radius);
 		box-shadow: var(--shadow);
-		text-align: left;
-		transition: border-color 0.15s, box-shadow 0.15s;
-	}
-	.card:hover {
-		border-color: var(--color-primary);
-		box-shadow: 0 2px 8px rgba(59,130,246,0.15);
 	}
 	.card.complete {
 		background: var(--color-green-bg);
 		border-color: var(--color-green);
 	}
-	.info {
+	.header {
 		display: flex;
 		justify-content: space-between;
 		align-items: center;
+	}
+	.info {
+		display: flex;
+		gap: 10px;
+		align-items: baseline;
 	}
 	.name {
 		font-weight: 600;
@@ -59,31 +67,65 @@
 		text-transform: uppercase;
 		letter-spacing: 0.05em;
 	}
-	.progress-row {
+	.score {
+		font-size: 0.85rem;
+		font-weight: 600;
+		color: var(--color-primary);
+	}
+	.grid {
+		display: flex;
+		gap: 4px;
+		justify-content: flex-end;
+	}
+	.block {
+		width: 24px;
+		height: 24px;
+		border-radius: 4px;
+		background: var(--color-gray-200);
+	}
+	.block.complete {
+		background: var(--color-green);
+	}
+	.block.current {
+		outline: 2px solid var(--color-primary);
+		outline-offset: -2px;
+	}
+	.actions {
+		display: flex;
+		gap: 6px;
+	}
+	.btn-log {
+		width: 36px;
+		height: 36px;
+		border-radius: 8px;
+		background: var(--color-primary);
+		color: white;
+		font-size: 1.25rem;
+		font-weight: 700;
 		display: flex;
 		align-items: center;
-		gap: 10px;
+		justify-content: center;
+		transition: opacity 0.15s;
 	}
-	.bar-track {
-		flex: 1;
-		height: 8px;
+	.btn-log:disabled {
+		opacity: 0.35;
+		cursor: default;
+	}
+	.btn-log:not(:disabled):hover {
+		opacity: 0.85;
+	}
+	.btn-undo {
+		width: 36px;
+		height: 36px;
+		border-radius: 8px;
 		background: var(--color-gray-100);
-		border-radius: 4px;
-		overflow: hidden;
-	}
-	.bar-fill {
-		height: 100%;
-		border-radius: 4px;
-		transition: width 0.2s;
-	}
-	.count {
-		font-size: 0.875rem;
-		font-weight: 600;
 		color: var(--color-gray-500);
-		min-width: 3em;
-		text-align: right;
+		font-size: 1.25rem;
+		display: flex;
+		align-items: center;
+		justify-content: center;
 	}
-	.count.done {
-		color: var(--color-green);
+	.btn-undo:hover {
+		background: var(--color-gray-200);
 	}
 </style>

@@ -1,5 +1,5 @@
 import initSqlJs, { type Database } from 'sql.js';
-import type { Habit, HabitWithProgress, LogEntry } from './types';
+import type { Habit, HabitWithProgress, LogEntry, PeriodBlock } from './types';
 
 const DB_NAME = 'habits-db';
 const WASM_URL = typeof window !== 'undefined'
@@ -62,7 +62,8 @@ export async function initDB(): Promise<void> {
 			goal_count INTEGER NOT NULL DEFAULT 1,
 			goal_period TEXT NOT NULL CHECK(goal_period IN ('daily', 'weekly')),
 			status TEXT NOT NULL DEFAULT 'active' CHECK(status IN ('active', 'archived', 'deleted')),
-			created_at TEXT NOT NULL
+			created_at TEXT NOT NULL,
+			archived_at TEXT
 		)
 	`);
 	db.run(`
@@ -73,6 +74,8 @@ export async function initDB(): Promise<void> {
 			created_at TEXT NOT NULL
 		)
 	`);
+	// migrate: add archived_at if table was created before this column existed
+	try { db.run("ALTER TABLE habits ADD COLUMN archived_at TEXT"); } catch { /* already exists */ }
 	await persist();
 }
 
@@ -104,14 +107,14 @@ export function createHabit(name: string, goalCount: number, goalPeriod: 'daily'
 
 export function getActiveHabits(): Habit[] {
 	const d = ensureDB();
-	const rows = d.exec('SELECT id, name, goal_count, goal_period, status, created_at FROM habits WHERE status = ? ORDER BY created_at', ['active']);
+	const rows = d.exec('SELECT id, name, goal_count, goal_period, status, created_at, archived_at FROM habits WHERE status = ? ORDER BY created_at', ['active']);
 	if (!rows.length) return [];
 	return rows[0].values.map(mapRowToHabit);
 }
 
 export function getArchivedHabits(): Habit[] {
 	const d = ensureDB();
-	const rows = d.exec('SELECT id, name, goal_count, goal_period, status, created_at FROM habits WHERE status = ? ORDER BY created_at', ['archived']);
+	const rows = d.exec('SELECT id, name, goal_count, goal_period, status, created_at, archived_at FROM habits WHERE status = ? ORDER BY created_at', ['archived']);
 	if (!rows.length) return [];
 	return rows[0].values.map(mapRowToHabit);
 }
@@ -123,7 +126,8 @@ function mapRowToHabit(row: unknown[]): Habit {
 		goalCount: row[2] as number,
 		goalPeriod: row[3] as 'daily' | 'weekly',
 		status: row[4] as 'active' | 'archived' | 'deleted',
-		createdAt: row[5] as string
+		createdAt: row[5] as string,
+		archivedAt: row[6] as string | undefined ?? undefined
 	};
 }
 
@@ -135,13 +139,15 @@ export function updateHabit(id: string, name: string, goalCount: number, goalPer
 
 export function archiveHabit(id: string): void {
 	const d = ensureDB();
-	d.run("UPDATE habits SET status = ? WHERE id = ?", ['archived', id]);
+	const now = new Date().toISOString();
+	d.run("UPDATE habits SET status = ?, archived_at = ? WHERE id = ?", ['archived', now, id]);
 	persist();
 }
 
 export function unarchiveHabit(id: string): void {
 	const d = ensureDB();
-	d.run("UPDATE habits SET status = ? WHERE id = ?", ['active', id]);
+	const now = new Date().toISOString();
+	d.run("UPDATE habits SET status = ?, created_at = ?, archived_at = NULL WHERE id = ?", ['active', now, id]);
 	persist();
 }
 
@@ -154,8 +160,40 @@ export function deleteHabit(id: string): void {
 
 export function logEntry(habitId: string, loggedAt?: string): LogEntry {
 	const d = ensureDB();
-	const id = crypto.randomUUID();
+	const habit = getHabit(habitId);
+	if (!habit) throw new Error('Habit not found');
+
 	const date = getDate(loggedAt);
+
+	let periodStart: string;
+	let periodEnd: string;
+
+	if (habit.goalPeriod === 'daily') {
+		periodStart = date;
+		periodEnd = date;
+	} else {
+		const dt = new Date(date + 'T00:00:00');
+		const day = dt.getDay();
+		const diff = day === 0 ? -6 : 1 - day;
+		const monday = new Date(dt);
+		monday.setDate(dt.getDate() + diff);
+		periodStart = monday.toISOString().slice(0, 10);
+		const sunday = new Date(monday);
+		sunday.setDate(monday.getDate() + 6);
+		periodEnd = sunday.toISOString().slice(0, 10);
+	}
+
+	const rows = d.exec(
+		'SELECT COUNT(*) FROM log_entries WHERE habit_id = ? AND logged_at >= ? AND logged_at <= ?',
+		[habitId, periodStart, periodEnd]
+	);
+	const count = rows[0].values[0][0] as number;
+
+	if (count >= habit.goalCount) {
+		throw new Error(`Cap reached: habit '${habit.name}' already has ${count} entries in this period`);
+	}
+
+	const id = crypto.randomUUID();
 	const now = new Date().toISOString();
 	d.run(
 		'INSERT INTO log_entries (id, habit_id, logged_at, created_at) VALUES (?, ?, ?, ?)',
@@ -169,6 +207,11 @@ export function removeLogEntry(id: string): void {
 	const d = ensureDB();
 	d.run('DELETE FROM log_entries WHERE id = ?', [id]);
 	persist();
+}
+
+function parseUTCDate(dateStr: string): Date {
+	const [y, m, d] = dateStr.split('-').map(Number);
+	return new Date(Date.UTC(y, m - 1, d));
 }
 
 function getPeriodBounds(goalPeriod: 'daily' | 'weekly'): { start: string; end: string } {
@@ -199,7 +242,7 @@ export function getProgress(habitId: string): number {
 
 export function getHabit(id: string): Habit | null {
 	const d = ensureDB();
-	const rows = d.exec('SELECT id, name, goal_count, goal_period, status, created_at FROM habits WHERE id = ?', [id]);
+	const rows = d.exec('SELECT id, name, goal_count, goal_period, status, created_at, archived_at FROM habits WHERE id = ?', [id]);
 	if (!rows.length) return null;
 	return mapRowToHabit(rows[0].values[0]);
 }
@@ -207,9 +250,157 @@ export function getHabit(id: string): Habit | null {
 export function getHabitsWithProgress(): HabitWithProgress[] {
 	const habits = getActiveHabits();
 	return habits.map(h => {
-		const progress = getProgress(h.id);
-		return { ...h, progress, isComplete: progress >= h.goalCount };
+		const progress = Math.min(getProgress(h.id), h.goalCount);
+		return { ...h, progress, isComplete: progress >= h.goalCount, score: getScore(h.id) };
 	});
+}
+
+export function getScore(habitId: string): number {
+	const d = ensureDB();
+	const habit = getHabit(habitId);
+	if (!habit || habit.status === 'deleted') return 0;
+
+	const today = new Date().toISOString().slice(0, 10);
+	const createdDate = habit.createdAt.slice(0, 10);
+	const cutoffDate = habit.archivedAt ? habit.archivedAt.slice(0, 10) : today;
+
+	const rows = d.exec(
+		'SELECT logged_at, COUNT(*) as cnt FROM log_entries WHERE habit_id = ? AND logged_at < ? GROUP BY logged_at',
+		[habitId, cutoffDate]
+	);
+
+	const counts: Record<string, number> = {};
+	if (rows.length) {
+		for (const row of rows[0].values) {
+			counts[row[0] as string] = row[1] as number;
+		}
+	}
+
+	if (habit.goalPeriod === 'daily') {
+		let score = 0;
+		const start = parseUTCDate(createdDate);
+		start.setUTCDate(start.getUTCDate() + 1);
+		const end = parseUTCDate(cutoffDate);
+
+		while (start < end) {
+			const dateStr = start.toISOString().slice(0, 10);
+			const cnt = counts[dateStr] || 0;
+			score += cnt >= habit.goalCount ? 1 : -1;
+			start.setUTCDate(start.getUTCDate() + 1);
+		}
+		return score;
+	} else {
+		let score = 0;
+		const created = parseUTCDate(createdDate);
+		const createdDay = created.getUTCDay();
+		const daysUntilMonday = createdDay === 0 ? 1 : (8 - createdDay) % 7;
+		const firstMonday = new Date(created);
+		firstMonday.setUTCDate(firstMonday.getUTCDate() + daysUntilMonday);
+
+		const cutoff = parseUTCDate(cutoffDate);
+		const cutoffDay = cutoff.getUTCDay();
+		const diff = cutoffDay === 0 ? -6 : 1 - cutoffDay;
+		const thisMonday = new Date(cutoff);
+		thisMonday.setUTCDate(cutoff.getUTCDate() + diff);
+
+		const weekStart = new Date(firstMonday);
+		while (weekStart < thisMonday) {
+			const weekEnd = new Date(weekStart);
+			weekEnd.setUTCDate(weekEnd.getUTCDate() + 6);
+
+			let cnt = 0;
+			const cursor = new Date(weekStart);
+			while (cursor <= weekEnd) {
+				cnt += counts[cursor.toISOString().slice(0, 10)] || 0;
+				cursor.setUTCDate(cursor.getUTCDate() + 1);
+			}
+			score += cnt >= habit.goalCount ? 1 : -1;
+			weekStart.setUTCDate(weekStart.getUTCDate() + 7);
+		}
+		return score;
+	}
+}
+
+export function getPeriodBlocks(habitId: string, count: number = 10): PeriodBlock[] {
+	const d = ensureDB();
+	const habit = getHabit(habitId);
+	if (!habit) return [];
+
+	const today = new Date().toISOString().slice(0, 10);
+	const cutoffDate = habit.archivedAt ? habit.archivedAt.slice(0, 10) : today;
+	const createdDate = habit.createdAt.slice(0, 10);
+
+	const rows = d.exec(
+		'SELECT logged_at, COUNT(*) as cnt FROM log_entries WHERE habit_id = ? GROUP BY logged_at',
+		[habitId]
+	);
+	const counts: Record<string, number> = {};
+	if (rows.length) {
+		for (const row of rows[0].values) {
+			counts[row[0] as string] = row[1] as number;
+		}
+	}
+
+	const blocks: PeriodBlock[] = [];
+	const msPerDay = 86400000;
+
+	if (habit.goalPeriod === 'daily') {
+		const created = parseUTCDate(createdDate);
+		const cutoff = parseUTCDate(cutoffDate);
+		const daysSinceCreation = Math.round((cutoff.getTime() - created.getTime()) / msPerDay) + 1;
+		const effectiveCount = Math.min(count, Math.max(1, daysSinceCreation));
+
+		for (let i = effectiveCount - 1; i >= 0; i--) {
+			const d = new Date(cutoff);
+			d.setUTCDate(d.getUTCDate() - i);
+			const dateStr = d.toISOString().slice(0, 10);
+			blocks.push({
+				startDate: dateStr,
+				complete: (counts[dateStr] || 0) >= habit.goalCount,
+				isCurrent: dateStr === cutoffDate
+			});
+		}
+	} else {
+		const created = parseUTCDate(createdDate);
+		const createdDay = created.getUTCDay();
+		const daysUntilMonday = createdDay === 0 ? 1 : (8 - createdDay) % 7;
+		const firstMonday = new Date(created);
+		firstMonday.setUTCDate(firstMonday.getUTCDate() + daysUntilMonday);
+
+		const cutoff = parseUTCDate(cutoffDate);
+		const cutoffDay = cutoff.getUTCDay();
+		const diff = cutoffDay === 0 ? -6 : 1 - cutoffDay;
+		const currentMonday = new Date(cutoff);
+		currentMonday.setUTCDate(cutoff.getUTCDate() + diff);
+
+		const weeksSinceFirst = Math.round((currentMonday.getTime() - firstMonday.getTime()) / (7 * msPerDay)) + 1;
+		const effectiveCount = Math.min(count, Math.max(1, weeksSinceFirst));
+
+		for (let i = effectiveCount - 1; i >= 0; i--) {
+			const monday = new Date(currentMonday);
+			monday.setUTCDate(monday.getUTCDate() - i * 7);
+			const mondayStr = monday.toISOString().slice(0, 10);
+
+			const isCurrent = mondayStr === currentMonday.toISOString().slice(0, 10);
+
+			let entryCount = 0;
+			const sunday = new Date(monday);
+			sunday.setUTCDate(sunday.getUTCDate() + 6);
+			const cursor = new Date(monday);
+			while (cursor <= sunday) {
+				entryCount += counts[cursor.toISOString().slice(0, 10)] || 0;
+				cursor.setUTCDate(cursor.getUTCDate() + 1);
+			}
+
+			blocks.push({
+				startDate: mondayStr,
+				complete: entryCount >= habit.goalCount,
+				isCurrent
+			});
+		}
+	}
+
+	return blocks;
 }
 
 export function getLogEntries(habitId: string): LogEntry[] {

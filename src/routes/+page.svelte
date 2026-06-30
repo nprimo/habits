@@ -10,6 +10,7 @@
 		unarchiveHabit,
 		deleteHabit,
 		logEntry,
+		removeLogEntry,
 		getLogEntries
 	} from '$lib/db';
 	import type { Habit } from '$lib/types';
@@ -45,8 +46,18 @@
 	}
 
 	function handleLog(habitId: string) {
-		logEntry(habitId);
+		try {
+			logEntry(habitId);
+		} catch { /* cap reached — button already disabled */ }
 		refresh();
+	}
+
+	function handleRemoveLastLog(habitId: string) {
+		const entries = getLogEntries(habitId);
+		if (entries.length > 0) {
+			removeLogEntry(entries[0].id);
+			refresh();
+		}
 	}
 
 	function handleArchive(id: string) {
@@ -86,7 +97,7 @@
 			{:else}
 				<div class="habit-list">
 					{#each habits as h (h.id)}
-						<HabitCard habit={h} onlog={() => handleLog(h.id)} />
+						<HabitCard habit={h} onlog={() => handleLog(h.id)} onremove={() => handleRemoveLastLog(h.id)} />
 					{/each}
 				</div>
 				<div class="fab">
