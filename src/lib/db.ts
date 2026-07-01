@@ -84,6 +84,11 @@ function ensureDB(): Database {
 	return db;
 }
 
+/** @internal For testing only. Replaces the module-level database instance. */
+export function setTestDB(database: Database): void {
+	db = database;
+}
+
 async function persist(): Promise<void> {
 	const data = db!.export();
 	await saveToIndexedDB(data);
@@ -279,7 +284,6 @@ export function getScore(habitId: string): number {
 	if (habit.goalPeriod === 'daily') {
 		let score = 0;
 		const start = parseUTCDate(createdDate);
-		start.setUTCDate(start.getUTCDate() + 1);
 		const end = parseUTCDate(cutoffDate);
 
 		while (start < end) {
@@ -293,9 +297,9 @@ export function getScore(habitId: string): number {
 		let score = 0;
 		const created = parseUTCDate(createdDate);
 		const createdDay = created.getUTCDay();
-		const daysUntilMonday = createdDay === 0 ? 1 : (8 - createdDay) % 7;
+		const daysSinceMonday = createdDay === 0 ? 6 : createdDay - 1;
 		const firstMonday = new Date(created);
-		firstMonday.setUTCDate(firstMonday.getUTCDate() + daysUntilMonday);
+		firstMonday.setUTCDate(firstMonday.getUTCDate() - daysSinceMonday);
 
 		const cutoff = parseUTCDate(cutoffDate);
 		const cutoffDay = cutoff.getUTCDay();
