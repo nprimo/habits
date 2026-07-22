@@ -76,6 +76,20 @@ export async function initDB(): Promise<void> {
 	`);
 	// migrate: add archived_at if table was created before this column existed
 	try { db.run("ALTER TABLE habits ADD COLUMN archived_at TEXT"); } catch { /* already exists */ }
+	// migrate: add sort_order for custom habit ordering
+	try { db.run("ALTER TABLE habits ADD COLUMN sort_order INTEGER NOT NULL DEFAULT 0"); } catch { /* already exists */ }
+	// backfill sort_order from created_at only if no habits have a custom order yet
+	const d = ensureDB();
+	const soRows = d.exec('SELECT COUNT(*) FROM habits WHERE sort_order != 0');
+	const alreadyCustom = soRows.length > 0 ? (soRows[0].values[0][0] as number) : 0;
+	if (alreadyCustom === 0) {
+		const allRows = d.exec('SELECT id FROM habits WHERE status = ? ORDER BY created_at', ['active']);
+		if (allRows.length > 0) {
+			allRows[0].values.forEach((row, i) => {
+				d.run('UPDATE habits SET sort_order = ? WHERE id = ?', [i, row[0] as string]);
+			});
+		}
+	}
 	await persist();
 }
 
@@ -102,24 +116,26 @@ export function createHabit(name: string, goalCount: number, goalPeriod: 'daily'
 	const d = ensureDB();
 	const id = crypto.randomUUID();
 	const now = new Date().toISOString();
+	const maxSORows = d.exec('SELECT COALESCE(MAX(sort_order), -1) FROM habits');
+	const nextSO = (maxSORows[0].values[0][0] as number) + 1;
 	d.run(
-		'INSERT INTO habits (id, name, goal_count, goal_period, status, created_at) VALUES (?, ?, ?, ?, ?, ?)',
-		[id, name, goalCount, goalPeriod, 'active', now]
+		'INSERT INTO habits (id, name, goal_count, goal_period, status, created_at, sort_order) VALUES (?, ?, ?, ?, ?, ?, ?)',
+		[id, name, goalCount, goalPeriod, 'active', now, nextSO]
 	);
 	persist();
-	return { id, name, goalCount, goalPeriod, status: 'active', createdAt: now };
+	return { id, name, goalCount, goalPeriod, status: 'active', createdAt: now, sortOrder: nextSO };
 }
 
 export function getActiveHabits(): Habit[] {
 	const d = ensureDB();
-	const rows = d.exec('SELECT id, name, goal_count, goal_period, status, created_at, archived_at FROM habits WHERE status = ? ORDER BY created_at', ['active']);
+	const rows = d.exec('SELECT id, name, goal_count, goal_period, status, created_at, archived_at, sort_order FROM habits WHERE status = ? ORDER BY sort_order, created_at', ['active']);
 	if (!rows.length) return [];
 	return rows[0].values.map(mapRowToHabit);
 }
 
 export function getArchivedHabits(): Habit[] {
 	const d = ensureDB();
-	const rows = d.exec('SELECT id, name, goal_count, goal_period, status, created_at, archived_at FROM habits WHERE status = ? ORDER BY created_at', ['archived']);
+	const rows = d.exec('SELECT id, name, goal_count, goal_period, status, created_at, archived_at, sort_order FROM habits WHERE status = ? ORDER BY created_at', ['archived']);
 	if (!rows.length) return [];
 	return rows[0].values.map(mapRowToHabit);
 }
@@ -132,7 +148,8 @@ function mapRowToHabit(row: unknown[]): Habit {
 		goalPeriod: row[3] as 'daily' | 'weekly',
 		status: row[4] as 'active' | 'archived' | 'deleted',
 		createdAt: row[5] as string,
-		archivedAt: row[6] as string | undefined ?? undefined
+		archivedAt: row[6] as string | undefined ?? undefined,
+		sortOrder: row[7] as number
 	};
 }
 
@@ -152,7 +169,17 @@ export function archiveHabit(id: string): void {
 export function unarchiveHabit(id: string): void {
 	const d = ensureDB();
 	const now = new Date().toISOString();
-	d.run("UPDATE habits SET status = ?, created_at = ?, archived_at = NULL WHERE id = ?", ['active', now, id]);
+	const maxSORows = d.exec('SELECT COALESCE(MAX(sort_order), -1) FROM habits');
+	const nextSO = (maxSORows[0].values[0][0] as number) + 1;
+	d.run("UPDATE habits SET status = ?, created_at = ?, archived_at = NULL, sort_order = ? WHERE id = ?", ['active', now, nextSO, id]);
+	persist();
+}
+
+export function reorderHabits(orderedIds: string[]): void {
+	const d = ensureDB();
+	orderedIds.forEach((id, i) => {
+		d.run('UPDATE habits SET sort_order = ? WHERE id = ?', [i, id]);
+	});
 	persist();
 }
 
@@ -247,7 +274,7 @@ export function getProgress(habitId: string): number {
 
 export function getHabit(id: string): Habit | null {
 	const d = ensureDB();
-	const rows = d.exec('SELECT id, name, goal_count, goal_period, status, created_at, archived_at FROM habits WHERE id = ?', [id]);
+	const rows = d.exec('SELECT id, name, goal_count, goal_period, status, created_at, archived_at, sort_order FROM habits WHERE id = ?', [id]);
 	if (!rows.length) return null;
 	return mapRowToHabit(rows[0].values[0]);
 }

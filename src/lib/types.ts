@@ -6,6 +6,7 @@ export interface Habit {
 	status: 'active' | 'archived' | 'deleted';
 	createdAt: string;
 	archivedAt?: string;
+	sortOrder: number;
 }
 
 export interface LogEntry {

@@ -8,6 +8,9 @@ importers:
 
   .:
     dependencies:
+      '@horuse/svelte-dnd':
+        specifier: ^1.0.1
+        version: 1.0.1(svelte@5.56.4)
       sql.js:
         specifier: ^1.14.1
         version: 1.14.1
@@ -789,6 +792,11 @@ packages:
     peerDependenciesMeta:
       '@noble/hashes':
         optional: true
+
+  '@horuse/svelte-dnd@1.0.1':
+    resolution: {integrity: sha512-iG9py538v2jIuOI2AJh/RFcymwFfq8+2n/Y7b6WFlb5ijG0EncJIh+VFEXOKzqVecSKja5UfwHBnggUkRva42w==}
+    peerDependencies:
+      svelte: ^5.0.0
 
   '@isaacs/cliui@9.0.0':
     resolution: {integrity: sha512-AokJm4tuBHillT+FpMtxQ60n8ObyXBatq7jD2/JA9dxbDDokKQm8KMht5ibGzLVU9IJDIKK4TPKgMHEYMn3lMg==}
@@ -3391,6 +3399,10 @@ snapshots:
     optional: true
 
   '@exodus/bytes@1.15.1': {}
+
+  '@horuse/svelte-dnd@1.0.1(svelte@5.56.4)':
+    dependencies:
+      svelte: 5.56.4
 
   '@isaacs/cliui@9.0.0': {}
 

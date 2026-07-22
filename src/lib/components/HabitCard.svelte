@@ -10,6 +10,7 @@
 <div class="card" class:complete={habit.isComplete}>
 	<div class="header">
 		<div class="info">
+			<span class="drag-handle" aria-label="Drag to reorder">⠿</span>
 			<span class="name">{habit.name}</span>
 			<span class="meta">{habit.goalCount}/{habit.goalPeriod === 'daily' ? 'day' : 'week'}</span>
 		</div>
@@ -56,6 +57,16 @@
 		display: flex;
 		gap: 10px;
 		align-items: baseline;
+	}
+	.drag-handle {
+		cursor: grab;
+		color: var(--color-gray-300);
+		font-size: 1.1rem;
+		user-select: none;
+		touch-action: none;
+	}
+	.drag-handle:active {
+		cursor: grabbing;
 	}
 	.name {
 		font-weight: 600;

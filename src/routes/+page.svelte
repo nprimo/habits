@@ -1,6 +1,7 @@
 <script lang="ts">
 	import HabitCard from '$lib/components/HabitCard.svelte';
 	import HabitForm from '$lib/components/HabitForm.svelte';
+	import { DndProvider, DndDroppable, DndDraggable, DndController, sortable } from '@horuse/svelte-dnd';
 	import {
 		getHabitsWithProgress,
 		getArchivedHabits,
@@ -11,7 +12,8 @@
 		deleteHabit,
 		logEntry,
 		removeLogEntry,
-		getLogEntries
+		getLogEntries,
+		reorderHabits
 	} from '$lib/db';
 	import type { Habit } from '$lib/types';
 
@@ -22,6 +24,17 @@
 
 	let habits = $derived.by(() => { refreshKey; return getHabitsWithProgress(); });
 	let archived = $derived.by(() => { refreshKey; return getArchivedHabits(); });
+
+	const controller = new DndController();
+	controller.onDrop(({ item, target }) => {
+		const fromIndex = habits.findIndex(h => h.id === item.id);
+		if (fromIndex === -1) return;
+		const updated = [...habits];
+		const [moved] = updated.splice(fromIndex, 1);
+		updated.splice(target.position, 0, moved);
+		reorderHabits(updated.map(h => h.id));
+		refresh();
+	});
 
 	let showForm = $state(false);
 	let editingHabit: Habit | undefined = $state(undefined);
@@ -95,11 +108,15 @@
 					<button class="btn-primary" onclick={openNew}>Create your first habit</button>
 				</div>
 			{:else}
-				<div class="habit-list">
-					{#each habits as h (h.id)}
-						<HabitCard habit={h} onlog={() => handleLog(h.id)} onremove={() => handleRemoveLastLog(h.id)} />
-					{/each}
-				</div>
+				<DndProvider {controller}>
+					<DndDroppable id="habits" strategy={sortable()} spacing={8}>
+						{#each habits as h, index (h.id)}
+							<DndDraggable id={h.id} position={index}>
+								<HabitCard habit={h} onlog={() => handleLog(h.id)} onremove={() => handleRemoveLastLog(h.id)} />
+							</DndDraggable>
+						{/each}
+					</DndDroppable>
+				</DndProvider>
 				<div class="fab">
 					<button class="btn-fab" onclick={openNew} aria-label="Add habit">+</button>
 				</div>
@@ -193,11 +210,6 @@
 		background: white;
 		color: var(--color-gray-800);
 		box-shadow: 0 1px 2px rgba(0,0,0,0.08);
-	}
-	.habit-list {
-		display: flex;
-		flex-direction: column;
-		gap: 8px;
 	}
 	.empty {
 		display: flex;

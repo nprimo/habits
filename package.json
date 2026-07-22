@@ -16,6 +16,7 @@
 		"deploy:dry": "npm run build && npx wrangler deploy --dry-run"
 	},
 	"dependencies": {
+		"@horuse/svelte-dnd": "^1.0.1",
 		"sql.js": "^1.14.1"
 	},
 	"devDependencies": {

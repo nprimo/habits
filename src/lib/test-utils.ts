@@ -12,7 +12,8 @@ export async function createTestDB(): Promise<Database> {
 			goal_period TEXT NOT NULL CHECK(goal_period IN ('daily', 'weekly')),
 			status TEXT NOT NULL DEFAULT 'active' CHECK(status IN ('active', 'archived', 'deleted')),
 			created_at TEXT NOT NULL,
-			archived_at TEXT
+			archived_at TEXT,
+			sort_order INTEGER NOT NULL DEFAULT 0
 		)
 	`);
 	db.run(`
@@ -35,6 +36,7 @@ export interface SeedHabitOpts {
 	status?: 'active' | 'archived' | 'deleted';
 	createdAt?: string;
 	archivedAt?: string | null;
+	sortOrder?: number;
 }
 
 export function seedHabit(db: Database, opts: SeedHabitOpts = {}): string {
@@ -42,8 +44,8 @@ export function seedHabit(db: Database, opts: SeedHabitOpts = {}): string {
 	const now = new Date().toISOString();
 
 	db.run(
-		`INSERT INTO habits (id, name, goal_count, goal_period, status, created_at, archived_at)
-		 VALUES (?, ?, ?, ?, ?, ?, ?)`,
+		`INSERT INTO habits (id, name, goal_count, goal_period, status, created_at, archived_at, sort_order)
+		 VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
 		[
 			id,
 			opts.name ?? 'Test Habit',
@@ -52,6 +54,7 @@ export function seedHabit(db: Database, opts: SeedHabitOpts = {}): string {
 			opts.status ?? 'active',
 			opts.createdAt ?? now,
 			opts.archivedAt ?? null,
+			opts.sortOrder ?? 0,
 		]
 	);
 

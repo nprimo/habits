@@ -2,7 +2,7 @@
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import 'fake-indexeddb/auto';
 import initSqlJs from 'sql.js';
-import { initDB, createHabit, getActiveHabits, getArchivedHabits, updateHabit, archiveHabit, unarchiveHabit, deleteHabit, logEntry, removeLogEntry, getProgress, getHabitsWithProgress, getHabit, getLogEntries, getScore, getPeriodBlocks } from './db';
+import { initDB, createHabit, getActiveHabits, getArchivedHabits, updateHabit, archiveHabit, unarchiveHabit, deleteHabit, logEntry, removeLogEntry, getProgress, getHabitsWithProgress, getHabit, getLogEntries, getScore, getPeriodBlocks, reorderHabits } from './db';
 
 beforeAll(async () => {
 	await initDB();
@@ -195,5 +195,36 @@ describe('period blocks', () => {
 		const todayBlock = blocks.find(b => b.startDate === today);
 		expect(todayBlock).not.toBeUndefined();
 		expect(todayBlock!.complete).toBe(true);
+	});
+});
+
+describe('reorder', () => {
+	it('reorders habits by updating sort_order', () => {
+		const habits = getActiveHabits();
+		expect(habits.length).toBeGreaterThanOrEqual(2);
+
+		const ids = habits.map(h => h.id);
+		const reversed = [...ids].reverse();
+		reorderHabits(reversed);
+
+		const reordered = getActiveHabits();
+		expect(reordered[0].id).toBe(ids[ids.length - 1]);
+		expect(reordered[reordered.length - 1].id).toBe(ids[0]);
+	});
+
+	it('creates new habit at the end', () => {
+		const before = getActiveHabits();
+		const h = createHabit('At End', 1, 'daily');
+		const after = getActiveHabits();
+		expect(after).toHaveLength(before.length + 1);
+		expect(after[after.length - 1].id).toBe(h.id);
+	});
+
+	it('unarchived habit goes to the end', () => {
+		const h = createHabit('To Unarchive Reorder', 1, 'daily');
+		archiveHabit(h.id);
+		unarchiveHabit(h.id);
+		const after = getActiveHabits();
+		expect(after[after.length - 1].id).toBe(h.id);
 	});
 });
