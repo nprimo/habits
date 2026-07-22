@@ -93,6 +93,7 @@
 	.actions {
 		display: flex;
 		gap: 6px;
+		justify-content: flex-end;
 	}
 	.btn-log {
 		width: 36px;
