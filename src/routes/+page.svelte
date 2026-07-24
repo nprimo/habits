@@ -22,10 +22,8 @@
 	function refresh() { refreshKey++; }
 
 	let habits = $derived.by(() => { refreshKey; return getHabitsWithProgress(); });
-	let incompleteHabits = $derived(habits.filter(h => !h.isComplete && !recentlyCompleted.has(h.id)));
+	let incompleteHabits = $derived(habits.filter(h => !h.isComplete));
 	let archived = $derived.by(() => { refreshKey; return getArchivedHabits(); });
-
-	let recentlyCompleted = $state(new Set<string>());
 
 	const controller = new DndController();
 	controller.onDrop(({ item, target }) => {
@@ -65,13 +63,6 @@
 			logEntry(habitId);
 		} catch { /* cap reached — button already disabled */ }
 		refresh();
-		const habit = habits.find(h => h.id === habitId);
-		if (habit?.isComplete && !recentlyCompleted.has(habitId)) {
-			recentlyCompleted.add(habitId);
-			setTimeout(() => {
-				recentlyCompleted.delete(habitId);
-			}, 600);
-		}
 	}
 
 	function handleArchive(id: string) {
@@ -119,9 +110,7 @@
 						<DndDroppable id="habits" strategy={sortable()} spacing={8}>
 						{#each incompleteHabits as h, index (h.id)}
 							<DndDraggable id={h.id} position={index}>
-								<div class:fading={recentlyCompleted.has(h.id)}>
-									<HabitCard habit={h} onlog={() => handleLog(h.id)} />
-								</div>
+								<HabitCard habit={h} onlog={() => handleLog(h.id)} />
 							</DndDraggable>
 						{/each}
 						</DndDroppable>
@@ -290,13 +279,6 @@
 	.btn-fab:hover {
 		transform: scale(1.05);
 		box-shadow: 0 6px 20px rgba(59,130,246,0.45);
-	}
-	.fading {
-		animation: fadeOut 600ms ease forwards;
-	}
-	@keyframes fadeOut {
-		0% { opacity: 1; transform: scale(1); }
-		100% { opacity: 0; transform: scale(0.95); }
 	}
 
 	/* Overview view */
