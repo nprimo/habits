@@ -108,6 +108,59 @@ describe('getScore — daily', () => {
 		seedLogEntry(db, { habitId: id, loggedAt: '2026-01-10' });
 		expect(getScore(id)).toBe(0);
 	});
+
+	it('retroactively penalizes past periods when goal is increased', () => {
+		// Jan 1: goal=1, log 1 entry → met
+		// Jan 3 (eval): Jan 1 met (+1), Jan 2 missed (-1) → score = 0
+		// Then raise goal to 2 on Jan 3 → Jan 1 still met (was goal=1 at that time)
+		// Jan 1 (+1), Jan 2 (-1) → score = 0 (unchanged)
+		setNow('2026-01-03T12:00:00.000Z');
+		const id = seedHabit(db, { createdAt: '2026-01-01T10:00:00.000Z', goalCount: 1 });
+		// Seed initial goal row (seedHabit bypasses createHabit)
+		db.run(
+			`INSERT INTO goals (id, habit_id, goal_count, goal_period, "from", "to")
+			 VALUES (?, ?, ?, ?, ?, NULL)`,
+			['g1', id, 1, 'daily', '2026-01-01T10:00:00.000Z']
+		);
+		seedLogEntry(db, { habitId: id, loggedAt: '2026-01-01' });
+		expect(getScore(id)).toBe(0);
+
+		// Raise goal to 2 on Jan 3 — close old goal, open new one
+		db.run('UPDATE habits SET goal_count = 2 WHERE id = ?', [id]);
+		db.run(`UPDATE goals SET "to" = '2026-01-03T12:00:00.000Z' WHERE id = ?`, ['g1']);
+		db.run(
+			`INSERT INTO goals (id, habit_id, goal_count, goal_period, "from", "to")
+			 VALUES (?, ?, ?, ?, ?, NULL)`,
+			['g2', id, 2, 'daily', '2026-01-03T12:00:00.000Z']
+		);
+		expect(getScore(id)).toBe(0);
+	});
+
+	it('retroactively rewards past periods when goal is decreased', () => {
+		// Jan 1: goal=2, log 1 entry → missed
+		// Jan 3 (eval): Jan 1 missed (-1), Jan 2 missed (-1) → score = -2
+		// Then lower goal to 1 on Jan 3 → Jan 1 still missed (was goal=2 at that time)
+		// Jan 1 (-1), Jan 2 (-1) → score = -2 (unchanged)
+		setNow('2026-01-03T12:00:00.000Z');
+		const id = seedHabit(db, { createdAt: '2026-01-01T10:00:00.000Z', goalCount: 2 });
+		db.run(
+			`INSERT INTO goals (id, habit_id, goal_count, goal_period, "from", "to")
+			 VALUES (?, ?, ?, ?, ?, NULL)`,
+			['g1', id, 2, 'daily', '2026-01-01T10:00:00.000Z']
+		);
+		seedLogEntry(db, { habitId: id, loggedAt: '2026-01-01' });
+		expect(getScore(id)).toBe(-2);
+
+		// Lower goal to 1 on Jan 3 — close old goal, open new one
+		db.run('UPDATE habits SET goal_count = 1 WHERE id = ?', [id]);
+		db.run(`UPDATE goals SET "to" = '2026-01-03T12:00:00.000Z' WHERE id = ?`, ['g1']);
+		db.run(
+			`INSERT INTO goals (id, habit_id, goal_count, goal_period, "from", "to")
+			 VALUES (?, ?, ?, ?, ?, NULL)`,
+			['g2', id, 1, 'daily', '2026-01-03T12:00:00.000Z']
+		);
+		expect(getScore(id)).toBe(-2);
+	});
 });
 
 describe('getScore — weekly', () => {

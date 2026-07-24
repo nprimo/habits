@@ -24,6 +24,16 @@ export async function createTestDB(): Promise<Database> {
 			created_at TEXT NOT NULL
 		)
 	`);
+	db.run(`
+		CREATE TABLE IF NOT EXISTS goals (
+			id TEXT PRIMARY KEY,
+			habit_id TEXT NOT NULL REFERENCES habits(id) ON DELETE CASCADE,
+			goal_count INTEGER NOT NULL,
+			goal_period TEXT NOT NULL CHECK(goal_period IN ('daily', 'weekly')),
+			"from" TEXT NOT NULL,
+			"to" TEXT
+		)
+	`);
 
 	return db;
 }

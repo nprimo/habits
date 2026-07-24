@@ -74,6 +74,25 @@ export async function initDB(): Promise<void> {
 			created_at TEXT NOT NULL
 		)
 	`);
+	db.run(`
+		CREATE TABLE IF NOT EXISTS goals (
+			id TEXT PRIMARY KEY,
+			habit_id TEXT NOT NULL REFERENCES habits(id) ON DELETE CASCADE,
+			goal_count INTEGER NOT NULL,
+			goal_period TEXT NOT NULL CHECK(goal_period IN ('daily', 'weekly')),
+			"from" TEXT NOT NULL,
+			"to" TEXT
+		)
+	`);
+	// backfill goals for existing habits that have none
+	const orphanRows = db.exec(
+		'SELECT h.id, h.goal_count, h.goal_period, h.created_at FROM habits h LEFT JOIN goals g ON h.id = g.habit_id WHERE g.id IS NULL'
+	);
+	if (orphanRows.length > 0) {
+		for (const row of orphanRows[0].values) {
+			createGoal(row[0] as string, row[1] as number, row[2] as string, row[3] as string);
+		}
+	}
 	// migrate: add archived_at if table was created before this column existed
 	try { db.run("ALTER TABLE habits ADD COLUMN archived_at TEXT"); } catch { /* already exists */ }
 	// migrate: add sort_order for custom habit ordering
@@ -108,6 +127,36 @@ async function persist(): Promise<void> {
 	await saveToIndexedDB(data);
 }
 
+function createGoal(habitId: string, goalCount: number, goalPeriod: string, from: string): void {
+	const d = ensureDB();
+	const id = crypto.randomUUID();
+	d.run(
+		'INSERT INTO goals (id, habit_id, goal_count, goal_period, "from", "to") VALUES (?, ?, ?, ?, ?, NULL)',
+		[id, habitId, goalCount, goalPeriod, from]
+	);
+}
+
+function closeGoal(habitId: string, now: string): void {
+	const d = ensureDB();
+	d.run(
+		'UPDATE goals SET "to" = ? WHERE habit_id = ? AND "to" IS NULL',
+		[now, habitId]
+	);
+}
+
+function getGoalForDate(habitId: string, dateStr: string): { goalCount: number; goalPeriod: string } {
+	const d = ensureDB();
+	const rows = d.exec(
+		'SELECT goal_count, goal_period FROM goals WHERE habit_id = ? AND "from" <= ? AND ("to" IS NULL OR "to" > ?) LIMIT 1',
+		[habitId, dateStr + 'T23:59:59', dateStr + 'T00:00:00']
+	);
+	if (rows.length > 0) {
+		return { goalCount: rows[0].values[0][0] as number, goalPeriod: rows[0].values[0][1] as string };
+	}
+	const habit = getHabit(habitId);
+	return { goalCount: habit?.goalCount ?? 1, goalPeriod: habit?.goalPeriod ?? 'daily' };
+}
+
 function getDate(date?: string): string {
 	return date || new Date().toISOString().slice(0, 10);
 }
@@ -122,6 +171,7 @@ export function createHabit(name: string, goalCount: number, goalPeriod: 'daily'
 		'INSERT INTO habits (id, name, goal_count, goal_period, status, created_at, sort_order) VALUES (?, ?, ?, ?, ?, ?, ?)',
 		[id, name, goalCount, goalPeriod, 'active', now, nextSO]
 	);
+	createGoal(id, goalCount, goalPeriod, now);
 	persist();
 	return { id, name, goalCount, goalPeriod, status: 'active', createdAt: now, sortOrder: nextSO };
 }
@@ -155,7 +205,10 @@ function mapRowToHabit(row: unknown[]): Habit {
 
 export function updateHabit(id: string, name: string, goalCount: number, goalPeriod: 'daily' | 'weekly'): void {
 	const d = ensureDB();
+	const now = new Date().toISOString();
 	d.run('UPDATE habits SET name = ?, goal_count = ?, goal_period = ? WHERE id = ?', [name, goalCount, goalPeriod, id]);
+	closeGoal(id, now);
+	createGoal(id, goalCount, goalPeriod, now);
 	persist();
 }
 
@@ -315,8 +368,9 @@ export function getScore(habitId: string): number {
 
 		while (start < end) {
 			const dateStr = start.toISOString().slice(0, 10);
+			const goal = getGoalForDate(habitId, dateStr);
 			const cnt = counts[dateStr] || 0;
-			score += cnt >= habit.goalCount ? 1 : -1;
+			score += cnt >= goal.goalCount ? 1 : -1;
 			start.setUTCDate(start.getUTCDate() + 1);
 		}
 		return score;
@@ -338,6 +392,8 @@ export function getScore(habitId: string): number {
 		while (weekStart < thisMonday) {
 			const weekEnd = new Date(weekStart);
 			weekEnd.setUTCDate(weekEnd.getUTCDate() + 6);
+			const weekStartStr = weekStart.toISOString().slice(0, 10);
+			const goal = getGoalForDate(habitId, weekStartStr);
 
 			let cnt = 0;
 			const cursor = new Date(weekStart);
@@ -345,7 +401,7 @@ export function getScore(habitId: string): number {
 				cnt += counts[cursor.toISOString().slice(0, 10)] || 0;
 				cursor.setUTCDate(cursor.getUTCDate() + 1);
 			}
-			score += cnt >= habit.goalCount ? 1 : -1;
+			score += cnt >= goal.goalCount ? 1 : -1;
 			weekStart.setUTCDate(weekStart.getUTCDate() + 7);
 		}
 		return score;
@@ -432,6 +488,39 @@ export function getPeriodBlocks(habitId: string, count: number = 10): PeriodBloc
 	}
 
 	return blocks;
+}
+
+export function getLogCountsByDate(habitId: string): Record<string, number> {
+	const d = ensureDB();
+	const rows = d.exec(
+		'SELECT logged_at, COUNT(*) as cnt FROM log_entries WHERE habit_id = ? GROUP BY logged_at',
+		[habitId]
+	);
+	const counts: Record<string, number> = {};
+	if (rows.length) {
+		for (const row of rows[0].values) {
+			counts[row[0] as string] = row[1] as number;
+		}
+	}
+	return counts;
+}
+
+export function addLogEntryForDate(habitId: string, date: string): LogEntry {
+	const d = ensureDB();
+	const id = crypto.randomUUID();
+	const now = new Date().toISOString();
+	d.run(
+		'INSERT INTO log_entries (id, habit_id, logged_at, created_at) VALUES (?, ?, ?, ?)',
+		[id, habitId, date, now]
+	);
+	persist();
+	return { id, habitId, loggedAt: date, createdAt: now };
+}
+
+export function removeLogEntriesForDate(habitId: string, date: string): void {
+	const d = ensureDB();
+	d.run('DELETE FROM log_entries WHERE habit_id = ? AND logged_at = ?', [habitId, date]);
+	persist();
 }
 
 export function getLogEntries(habitId: string): LogEntry[] {

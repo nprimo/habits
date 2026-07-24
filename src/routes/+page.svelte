@@ -11,19 +11,21 @@
 		unarchiveHabit,
 		deleteHabit,
 		logEntry,
-		removeLogEntry,
-		getLogEntries,
-		reorderHabits
+		reorderHabits,
+		getPeriodBlocks
 	} from '$lib/db';
 	import type { Habit } from '$lib/types';
 
-	let tab = $state<'today' | 'manage'>('today');
+	let tab = $state<'today' | 'overview' | 'manage'>('today');
 
 	let refreshKey = $state(0);
 	function refresh() { refreshKey++; }
 
 	let habits = $derived.by(() => { refreshKey; return getHabitsWithProgress(); });
+	let incompleteHabits = $derived(habits.filter(h => !h.isComplete && !recentlyCompleted.has(h.id)));
 	let archived = $derived.by(() => { refreshKey; return getArchivedHabits(); });
+
+	let recentlyCompleted = $state(new Set<string>());
 
 	const controller = new DndController();
 	controller.onDrop(({ item, target }) => {
@@ -63,13 +65,12 @@
 			logEntry(habitId);
 		} catch { /* cap reached — button already disabled */ }
 		refresh();
-	}
-
-	function handleRemoveLastLog(habitId: string) {
-		const entries = getLogEntries(habitId);
-		if (entries.length > 0) {
-			removeLogEntry(entries[0].id);
-			refresh();
+		const habit = habits.find(h => h.id === habitId);
+		if (habit?.isComplete && !recentlyCompleted.has(habitId)) {
+			recentlyCompleted.add(habitId);
+			setTimeout(() => {
+				recentlyCompleted.delete(habitId);
+			}, 600);
 		}
 	}
 
@@ -96,6 +97,7 @@
 		<h1>Habits</h1>
 		<nav>
 			<button class="tab" class:active={tab === 'today'} onclick={() => tab = 'today'}>Today</button>
+			<button class="tab" class:active={tab === 'overview'} onclick={() => tab = 'overview'}>Overview</button>
 			<button class="tab" class:active={tab === 'manage'} onclick={() => tab = 'manage'}>Manage</button>
 		</nav>
 	</header>
@@ -108,19 +110,56 @@
 					<button class="btn-primary" onclick={openNew}>Create your first habit</button>
 				</div>
 			{:else}
-				<DndProvider {controller}>
-					<DndDroppable id="habits" strategy={sortable()} spacing={8}>
-						{#each habits as h, index (h.id)}
+				{#if incompleteHabits.length === 0}
+					<div class="empty">
+						<p>All done for today!</p>
+					</div>
+				{:else}
+					<DndProvider {controller}>
+						<DndDroppable id="habits" strategy={sortable()} spacing={8}>
+						{#each incompleteHabits as h, index (h.id)}
 							<DndDraggable id={h.id} position={index}>
-								<HabitCard habit={h} onlog={() => handleLog(h.id)} onremove={() => handleRemoveLastLog(h.id)} />
+								<div class:fading={recentlyCompleted.has(h.id)}>
+									<HabitCard habit={h} onlog={() => handleLog(h.id)} />
+								</div>
 							</DndDraggable>
 						{/each}
-					</DndDroppable>
-				</DndProvider>
+						</DndDroppable>
+					</DndProvider>
+				{/if}
 				<div class="fab">
 					<button class="btn-fab" onclick={openNew} aria-label="Add habit">+</button>
 				</div>
 			{/if}
+		{:else if tab === 'overview'}
+			<div class="overview">
+				{#if habits.length === 0}
+					<p class="muted">No habits yet.</p>
+				{:else}
+					{#each habits as h (h.id)}
+						{@const blocks = getPeriodBlocks(h.id, 10)}
+						<div class="overview-card" class:complete={h.isComplete}>
+							<div class="overview-header">
+								<div class="overview-info">
+									<span class="overview-name">{h.name}</span>
+									<span class="overview-goal">{h.goalCount}/{h.goalPeriod === 'daily' ? 'day' : 'week'}</span>
+								</div>
+								<span class="overview-score">Score: {h.score}</span>
+							</div>
+							<div class="overview-grid">
+								{#each blocks as block (block.startDate)}
+									<div
+										class="block"
+										class:complete={block.complete}
+										class:current={block.isCurrent}
+										title="{block.startDate}: {block.complete ? 'goal met' : 'goal not met'}"
+									></div>
+								{/each}
+							</div>
+						</div>
+					{/each}
+				{/if}
+			</div>
 		{:else}
 			<div class="manage">
 				<div class="manage-header">
@@ -251,6 +290,76 @@
 	.btn-fab:hover {
 		transform: scale(1.05);
 		box-shadow: 0 6px 20px rgba(59,130,246,0.45);
+	}
+	.fading {
+		animation: fadeOut 600ms ease forwards;
+	}
+	@keyframes fadeOut {
+		0% { opacity: 1; transform: scale(1); }
+		100% { opacity: 0; transform: scale(0.95); }
+	}
+
+	/* Overview view */
+	.overview {
+		display: flex;
+		flex-direction: column;
+		gap: 12px;
+	}
+	.overview-card {
+		display: flex;
+		flex-direction: column;
+		gap: 10px;
+		padding: 16px;
+		background: white;
+		border: 1px solid var(--color-gray-200);
+		border-radius: var(--radius);
+	}
+	.overview-card.complete {
+		background: var(--color-green-bg);
+		border-color: var(--color-green);
+	}
+	.overview-header {
+		display: flex;
+		justify-content: space-between;
+		align-items: center;
+	}
+	.overview-info {
+		display: flex;
+		gap: 8px;
+		align-items: baseline;
+	}
+	.overview-name {
+		font-weight: 600;
+		font-size: 1rem;
+	}
+	.overview-goal {
+		font-size: 0.75rem;
+		color: var(--color-gray-400);
+		text-transform: uppercase;
+		letter-spacing: 0.05em;
+	}
+	.overview-score {
+		font-size: 0.85rem;
+		font-weight: 600;
+		color: var(--color-primary);
+	}
+	.overview-grid {
+		display: flex;
+		gap: 4px;
+		justify-content: flex-end;
+	}
+	.block {
+		width: 24px;
+		height: 24px;
+		border-radius: 4px;
+		background: var(--color-gray-200);
+	}
+	.block.complete {
+		background: var(--color-green);
+	}
+	.block.current {
+		outline: 2px solid var(--color-primary);
+		outline-offset: -2px;
 	}
 
 	/* Manage view */

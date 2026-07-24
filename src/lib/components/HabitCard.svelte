@@ -2,7 +2,7 @@
 	import type { HabitWithProgress, PeriodBlock } from '$lib/types';
 	import { getPeriodBlocks } from '$lib/db';
 
-	let { habit, onlog, onremove }: { habit: HabitWithProgress; onlog: () => void; onremove: () => void } = $props();
+	let { habit, onlog }: { habit: HabitWithProgress; onlog: () => void } = $props();
 
 	let blocks = $derived(getPeriodBlocks(habit.id, 10));
 </script>
@@ -28,7 +28,6 @@
 	</div>
 	<div class="actions">
 		<button class="btn-log" onclick={onlog} disabled={habit.isComplete} aria-label="Log entry">+</button>
-		<button class="btn-undo" onclick={onremove} aria-label="Remove last entry">−</button>
 	</div>
 </div>
 
@@ -125,19 +124,5 @@
 	}
 	.btn-log:not(:disabled):hover {
 		opacity: 0.85;
-	}
-	.btn-undo {
-		width: 36px;
-		height: 36px;
-		border-radius: 8px;
-		background: var(--color-gray-100);
-		color: var(--color-gray-500);
-		font-size: 1.25rem;
-		display: flex;
-		align-items: center;
-		justify-content: center;
-	}
-	.btn-undo:hover {
-		background: var(--color-gray-200);
 	}
 </style>

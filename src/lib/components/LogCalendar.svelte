@@ -1,0 +1,285 @@
+<script lang="ts">
+	import type { Habit } from '$lib/types';
+	import { getLogCountsByDate, addLogEntryForDate, removeLogEntriesForDate } from '$lib/db';
+
+	let { habit }: { habit: Habit } = $props();
+
+	const today = new Date();
+	// svelte-ignore state_referenced_locally
+	const todayStr = today.toISOString().slice(0, 10);
+	// svelte-ignore state_referenced_locally
+	const createdStr = habit.createdAt.slice(0, 10);
+
+	let logCounts = $state<Record<string, number>>({});
+
+	function loadCounts() {
+		logCounts = getLogCountsByDate(habit.id);
+	}
+
+	loadCounts();
+
+	const calendarDays = $derived.by(() => {
+		const [cy, cm, cd] = createdStr.split('-').map(Number);
+		const createdDate = new Date(cy, cm - 1, cd);
+		const startDow = createdDate.getDay();
+		const offset = startDow === 0 ? 6 : startDow - 1;
+
+		const cells: { day: number; month: number; year: number; dateStr: string }[] = [];
+		const cursor = new Date(createdDate);
+		while (cursor <= today) {
+			cells.push({
+				day: cursor.getDate(),
+				month: cursor.getMonth(),
+				year: cursor.getFullYear(),
+				dateStr: cursor.toISOString().slice(0, 10)
+			});
+			cursor.setDate(cursor.getDate() + 1);
+		}
+
+		const padded: (typeof cells[0] | null)[] = [];
+		for (let i = 0; i < offset; i++) padded.push(null);
+		for (const c of cells) padded.push(c);
+		return padded;
+	});
+
+	const weeks = $derived.by(() => {
+		const result: { monday: string; sunday: string; count: number }[] = [];
+
+		const todayMonday = new Date(today);
+		const tDay = todayMonday.getDay();
+		todayMonday.setDate(todayMonday.getDate() - (tDay === 0 ? 6 : tDay - 1));
+
+		const [cy, cm, cd] = createdStr.split('-').map(Number);
+		const createdDate = new Date(cy, cm - 1, cd);
+		const cDay = createdDate.getDay();
+		const createdMonday = new Date(createdDate);
+		createdMonday.setDate(createdDate.getDate() - (cDay === 0 ? 6 : cDay - 1));
+
+		const monday = new Date(todayMonday);
+		while (monday >= createdMonday) {
+			const m = new Date(monday);
+			const s = new Date(monday);
+			s.setDate(monday.getDate() + 6);
+			const ms = m.toISOString().slice(0, 10);
+			const ss = s.toISOString().slice(0, 10);
+
+			let count = 0;
+			const cursor = new Date(m);
+			while (cursor <= s) {
+				const ds = cursor.toISOString().slice(0, 10);
+				count += logCounts[ds] || 0;
+				cursor.setDate(cursor.getDate() + 1);
+			}
+
+			result.push({ monday: ms, sunday: ss, count });
+			monday.setDate(monday.getDate() - 7);
+		}
+		return result;
+	});
+
+	function cycleDay(dateStr: string) {
+		const current = logCounts[dateStr] || 0;
+		if (current < habit.goalCount) {
+			addLogEntryForDate(habit.id, dateStr);
+		} else {
+			removeLogEntriesForDate(habit.id, dateStr);
+		}
+		loadCounts();
+	}
+
+	function weekMidweek(mondayStr: string): string {
+		const [y, m, d] = mondayStr.split('-').map(Number);
+		const dt = new Date(Date.UTC(y, m - 1, d + 2));
+		return dt.toISOString().slice(0, 10);
+	}
+
+	function cycleWeek(mondayStr: string) {
+		const current = weeks.find(w => w.monday === mondayStr)?.count || 0;
+		if (current < habit.goalCount) {
+			addLogEntryForDate(habit.id, weekMidweek(mondayStr));
+		} else {
+			const [y, m, d] = mondayStr.split('-').map(Number);
+			const cursor = new Date(Date.UTC(y, m - 1, d));
+			for (let i = 0; i < 7; i++) {
+				const ds = cursor.toISOString().slice(0, 10);
+				removeLogEntriesForDate(habit.id, ds);
+				cursor.setUTCDate(cursor.getUTCDate() + 1);
+			}
+		}
+		loadCounts();
+	}
+
+	function formatRange(mondayStr: string, sundayStr: string): string {
+		const [ym, mm, dm] = mondayStr.split('-').map(Number);
+		const [ys, ms, ds] = sundayStr.split('-').map(Number);
+		const m1 = new Date(ym, mm - 1, dm).toLocaleString('default', { month: 'short' });
+		const m2 = new Date(ys, ms - 1, ds).toLocaleString('default', { month: 'short' });
+		return `${m1} ${dm} – ${m2} ${ds}`;
+	}
+</script>
+
+{#if habit.goalPeriod === 'daily'}
+	<div class="log-calendar">
+		<div class="cal-grid">
+			<span class="dow">Mo</span>
+			<span class="dow">Tu</span>
+			<span class="dow">We</span>
+			<span class="dow">Th</span>
+			<span class="dow">Fr</span>
+			<span class="dow">Sa</span>
+			<span class="dow">Su</span>
+			{#each calendarDays as cell}
+				{#if cell === null}
+					<span></span>
+				{:else}
+					{@const count = logCounts[cell.dateStr] || 0}
+					<button
+						class="day-btn"
+						class:empty={count === 0}
+						class:has-logs={count > 0}
+						class:full={count >= habit.goalCount}
+						class:today={cell.dateStr === todayStr}
+						onclick={() => cycleDay(cell.dateStr)}
+					>
+						{cell.day}
+						{#if count > 0}
+							<span class="count">{count}</span>
+						{/if}
+					</button>
+				{/if}
+			{/each}
+		</div>
+	</div>
+{:else}
+	<div class="log-calendar weekly">
+		<h3 class="weekly-title">Log History</h3>
+		<div class="week-list">
+			{#each weeks as week}
+				<button
+					class="week-btn"
+					class:empty={week.count === 0}
+					class:has-logs={week.count > 0}
+					class:full={week.count >= habit.goalCount}
+					onclick={() => cycleWeek(week.monday)}
+				>
+					<span class="week-range">{formatRange(week.monday, week.sunday)}</span>
+					<span class="week-count">{week.count}/{habit.goalCount}</span>
+				</button>
+			{/each}
+		</div>
+	</div>
+{/if}
+
+<style>
+	.log-calendar {
+		margin-top: 12px;
+		padding-top: 12px;
+		border-top: 1px solid var(--color-gray-200);
+	}
+
+	.cal-grid {
+		display: grid;
+		grid-template-columns: repeat(7, 1fr);
+		gap: 3px;
+	}
+	.dow {
+		text-align: center;
+		font-size: 0.65rem;
+		font-weight: 600;
+		color: var(--color-gray-400);
+		padding: 2px 0 4px;
+		text-transform: uppercase;
+	}
+
+	.day-btn {
+		aspect-ratio: 1;
+		border-radius: 6px;
+		display: flex;
+		flex-direction: column;
+		align-items: center;
+		justify-content: center;
+		gap: 1px;
+		font-size: 0.75rem;
+		font-weight: 500;
+		transition: background 0.12s;
+		position: relative;
+	}
+	.day-btn.empty {
+		background: var(--color-gray-100);
+		color: var(--color-gray-500);
+	}
+	.day-btn.empty:hover {
+		background: var(--color-gray-200);
+	}
+	.day-btn.has-logs {
+		background: var(--color-green);
+		color: white;
+	}
+	.day-btn.has-logs:hover {
+		background: #16a34a;
+	}
+	.day-btn.full {
+		background: #15803d;
+		color: white;
+	}
+	.day-btn.full:hover {
+		background: #166534;
+	}
+	.day-btn.today {
+		box-shadow: inset 0 0 0 2px var(--color-primary);
+	}
+	.count {
+		font-size: 0.55rem;
+		font-weight: 700;
+		line-height: 1;
+	}
+
+	.weekly-title {
+		font-size: 0.8rem;
+		font-weight: 600;
+		color: var(--color-gray-500);
+		margin-bottom: 8px;
+	}
+	.week-list {
+		display: flex;
+		flex-direction: column;
+		gap: 4px;
+	}
+	.week-btn {
+		display: flex;
+		justify-content: space-between;
+		align-items: center;
+		padding: 8px 12px;
+		border-radius: 6px;
+		font-size: 0.8rem;
+		transition: background 0.12s;
+	}
+	.week-btn.empty {
+		background: var(--color-gray-100);
+		color: var(--color-gray-500);
+	}
+	.week-btn.empty:hover {
+		background: var(--color-gray-200);
+	}
+	.week-btn.has-logs {
+		background: var(--color-green);
+		color: white;
+	}
+	.week-btn.has-logs:hover {
+		background: #16a34a;
+	}
+	.week-btn.full {
+		background: #15803d;
+		color: white;
+	}
+	.week-btn.full:hover {
+		background: #166534;
+	}
+	.week-range {
+		font-weight: 500;
+	}
+	.week-count {
+		font-weight: 700;
+		font-size: 0.75rem;
+	}
+</style>

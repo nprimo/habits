@@ -1,5 +1,6 @@
 <script lang="ts">
 	import type { Habit } from '$lib/types';
+	import LogCalendar from './LogCalendar.svelte';
 
 	let {
 		habit,
@@ -58,6 +59,9 @@
 				</button>
 			</div>
 		</form>
+		{#if habit}
+			<LogCalendar {habit} />
+		{/if}
 	</div>
 </div>
 
