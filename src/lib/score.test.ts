@@ -1,4 +1,5 @@
 // @vitest-environment node
+process.env.TZ = 'UTC';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import type { Database } from 'sql.js';
 import { getScore, getHabitsWithProgress, setTestDB } from './db';

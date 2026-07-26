@@ -5,8 +5,7 @@
 	let { habit }: { habit: Habit } = $props();
 
 	const today = new Date();
-	// svelte-ignore state_referenced_locally
-	const todayStr = today.toISOString().slice(0, 10);
+	const todayStr = formatDate(today);
 	// svelte-ignore state_referenced_locally
 	const createdStr = habit.createdAt.slice(0, 10);
 
@@ -31,7 +30,7 @@
 				day: cursor.getDate(),
 				month: cursor.getMonth(),
 				year: cursor.getFullYear(),
-				dateStr: cursor.toISOString().slice(0, 10)
+				dateStr: formatDate(cursor)
 			});
 			cursor.setDate(cursor.getDate() + 1);
 		}
@@ -60,13 +59,13 @@
 			const m = new Date(monday);
 			const s = new Date(monday);
 			s.setDate(monday.getDate() + 6);
-			const ms = m.toISOString().slice(0, 10);
-			const ss = s.toISOString().slice(0, 10);
+			const ms = formatDate(m);
+			const ss = formatDate(s);
 
 			let count = 0;
 			const cursor = new Date(m);
 			while (cursor <= s) {
-				const ds = cursor.toISOString().slice(0, 10);
+				const ds = formatDate(cursor);
 				count += logCounts[ds] || 0;
 				cursor.setDate(cursor.getDate() + 1);
 			}
@@ -89,8 +88,8 @@
 
 	function weekMidweek(mondayStr: string): string {
 		const [y, m, d] = mondayStr.split('-').map(Number);
-		const dt = new Date(Date.UTC(y, m - 1, d + 2));
-		return dt.toISOString().slice(0, 10);
+		const dt = new Date(y, m - 1, d + 2);
+			return formatDate(dt);
 	}
 
 	function cycleWeek(mondayStr: string) {
@@ -99,14 +98,21 @@
 			addLogEntryForDate(habit.id, weekMidweek(mondayStr));
 		} else {
 			const [y, m, d] = mondayStr.split('-').map(Number);
-			const cursor = new Date(Date.UTC(y, m - 1, d));
+			const cursor = new Date(y, m - 1, d);
 			for (let i = 0; i < 7; i++) {
-				const ds = cursor.toISOString().slice(0, 10);
+				const ds = formatDate(cursor);
 				removeLogEntriesForDate(habit.id, ds);
-				cursor.setUTCDate(cursor.getUTCDate() + 1);
+				cursor.setDate(cursor.getDate() + 1);
 			}
 		}
 		loadCounts();
+	}
+
+	function formatDate(d: Date): string {
+		const y = d.getFullYear();
+		const m = String(d.getMonth() + 1).padStart(2, '0');
+		const day = String(d.getDate()).padStart(2, '0');
+		return `${y}-${m}-${day}`;
 	}
 
 	function formatRange(mondayStr: string, sundayStr: string): string {

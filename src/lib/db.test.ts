@@ -1,5 +1,6 @@
 // @vitest-environment node
-import { describe, it, expect, beforeAll, afterAll } from 'vitest';
+process.env.TZ = 'UTC';
+import { describe, it, expect, beforeAll, afterAll, vi, beforeEach, afterEach } from 'vitest';
 import 'fake-indexeddb/auto';
 import initSqlJs from 'sql.js';
 import { initDB, createHabit, getActiveHabits, getArchivedHabits, updateHabit, archiveHabit, unarchiveHabit, deleteHabit, logEntry, removeLogEntry, getProgress, getHabitsWithProgress, getHabit, getLogEntries, getScore, getPeriodBlocks, reorderHabits } from './db';
@@ -159,6 +160,15 @@ describe('progress', () => {
 });
 
 describe('score', () => {
+	beforeEach(() => {
+		vi.useFakeTimers();
+		vi.setSystemTime(new Date('2026-01-15T12:00:00.000Z'));
+	});
+
+	afterEach(() => {
+		vi.useRealTimers();
+	});
+
 	it('returns 0 for a new habit with no past periods', () => {
 		const h = createHabit('Score Zero', 1, 'daily');
 		expect(getScore(h.id)).toBe(0);
@@ -170,6 +180,15 @@ describe('score', () => {
 });
 
 describe('period blocks', () => {
+	beforeEach(() => {
+		vi.useFakeTimers();
+		vi.setSystemTime(new Date('2026-01-15T12:00:00.000Z'));
+	});
+
+	afterEach(() => {
+		vi.useRealTimers();
+	});
+
 	it('returns 1 block for a newly created daily habit', () => {
 		const h = createHabit('Blocks Daily', 1, 'daily');
 		const blocks = getPeriodBlocks(h.id);
@@ -191,7 +210,7 @@ describe('period blocks', () => {
 		const h = createHabit('Block Complete', 1, 'daily');
 		logEntry(h.id);
 		const blocks = getPeriodBlocks(h.id);
-		const today = new Date().toISOString().slice(0, 10);
+		const today = new Date().toLocaleDateString('en-CA');
 		const todayBlock = blocks.find(b => b.startDate === today);
 		expect(todayBlock).not.toBeUndefined();
 		expect(todayBlock!.complete).toBe(true);
