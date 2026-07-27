@@ -16,7 +16,7 @@
 	} from '$lib/db';
 	import type { Habit } from '$lib/types';
 
-	let tab = $state<'today' | 'overview' | 'manage'>('today');
+	let tab = $state<'today' | 'overview'>('today');
 
 	let refreshKey = $state(0);
 	function refresh() { refreshKey++; }
@@ -89,7 +89,6 @@
 		<nav>
 			<button class="tab" class:active={tab === 'today'} onclick={() => tab = 'today'}>Today</button>
 			<button class="tab" class:active={tab === 'overview'} onclick={() => tab = 'overview'}>Overview</button>
-			<button class="tab" class:active={tab === 'manage'} onclick={() => tab = 'manage'}>Manage</button>
 		</nav>
 	</header>
 
@@ -106,15 +105,9 @@
 						<p>All done for today!</p>
 					</div>
 				{:else}
-					<DndProvider {controller}>
-						<DndDroppable id="habits" strategy={sortable()} spacing={8}>
-						{#each incompleteHabits as h, index (h.id)}
-							<DndDraggable id={h.id} position={index}>
-								<HabitCard habit={h} onlog={() => handleLog(h.id)} />
-							</DndDraggable>
-						{/each}
-						</DndDroppable>
-					</DndProvider>
+					{#each incompleteHabits as h (h.id)}
+						<HabitCard habit={h} onlog={() => handleLog(h.id)} />
+					{/each}
 				{/if}
 				<div class="fab">
 					<button class="btn-fab" onclick={openNew} aria-label="Add habit">+</button>
@@ -122,76 +115,82 @@
 			{/if}
 		{:else if tab === 'overview'}
 			<div class="overview">
-				{#if habits.length === 0}
+				{#if habits.length === 0 && archived.length === 0}
 					<p class="muted">No habits yet.</p>
 				{:else}
-					{#each habits as h (h.id)}
-						{@const blocks = getPeriodBlocks(h.id, 10)}
-						<div class="overview-card" class:complete={h.isComplete}>
-							<div class="overview-header">
-								<div class="overview-info">
-									<span class="overview-name">{h.name}</span>
-									<span class="overview-goal">{h.goalCount}/{h.goalPeriod === 'daily' ? 'day' : 'week'}</span>
+					<DndProvider {controller}>
+						<DndDroppable id="habits" strategy={sortable()} spacing={8}>
+						{#each habits as h, index (h.id)}
+							<DndDraggable id={h.id} position={index}>
+								{@const blocks = getPeriodBlocks(h.id, 10)}
+								<div class="overview-card" class:complete={h.isComplete}>
+									<div class="overview-header">
+										<div class="overview-info">
+											<span class="drag-handle" aria-label="Drag to reorder">⠿</span>
+											<span class="overview-name">{h.name}</span>
+											<span class="overview-goal">{h.goalCount}/{h.goalPeriod === 'daily' ? 'day' : 'week'}</span>
+										</div>
+										<div class="overview-metrics">
+											<span class="overview-progress" class:complete={h.isComplete}>{h.progress}/{h.goalCount}</span>
+											<span class="overview-score">Score: {h.score}</span>
+										</div>
+									</div>
+									<div class="overview-grid">
+										{#each blocks as block (block.startDate)}
+											<div
+												class="block"
+												class:complete={block.complete}
+												class:current={block.isCurrent}
+												title="{block.startDate}: {block.complete ? 'goal met' : 'goal not met'}"
+											></div>
+										{/each}
+									</div>
+									<div class="overview-actions">
+										<button class="btn-sm" onclick={() => openEdit(h)}>Edit</button>
+										<button class="btn-sm btn-archive" onclick={() => handleArchive(h.id)}>Archive</button>
+										<button class="btn-sm btn-danger" onclick={() => handleDelete(h.id)}>Delete</button>
+									</div>
 								</div>
-								<span class="overview-score">Score: {h.score}</span>
-							</div>
-							<div class="overview-grid">
-								{#each blocks as block (block.startDate)}
-									<div
-										class="block"
-										class:complete={block.complete}
-										class:current={block.isCurrent}
-										title="{block.startDate}: {block.complete ? 'goal met' : 'goal not met'}"
-									></div>
-								{/each}
-							</div>
-						</div>
-					{/each}
-				{/if}
-			</div>
-		{:else}
-			<div class="manage">
-				<div class="manage-header">
-					<h2>Active</h2>
-					<button class="btn-primary" onclick={openNew}>+ New</button>
-				</div>
-				{#if habits.length === 0}
-					<p class="muted">No active habits.</p>
-				{:else}
-					<div class="manage-list">
-						{#each habits as h (h.id)}
-							<div class="manage-item">
-								<div class="item-info">
-									<strong>{h.name}</strong>
-									<span class="item-meta">{h.goalCount}/{h.goalPeriod}</span>
-								</div>
-								<div class="item-actions">
-									<button class="btn-sm" onclick={() => openEdit(h)}>Edit</button>
-									<button class="btn-sm btn-archive" onclick={() => handleArchive(h.id)}>Archive</button>
-									<button class="btn-sm btn-danger" onclick={() => handleDelete(h.id)}>Delete</button>
-								</div>
-							</div>
+							</DndDraggable>
 						{/each}
-					</div>
-				{/if}
+						</DndDroppable>
+					</DndProvider>
 
-				{#if archived.length > 0}
-					<h2 class="archived-h2">Archived</h2>
-					<div class="manage-list">
+					{#if archived.length > 0}
+						<h2 class="archived-h2">Archived</h2>
 						{#each archived as h (h.id)}
-							<div class="manage-item archived">
-								<div class="item-info">
-									<strong>{h.name}</strong>
-									<span class="item-meta">{h.goalCount}/{h.goalPeriod}</span>
+							{@const blocks = getPeriodBlocks(h.id, 10)}
+							<div class="overview-card archived">
+								<div class="overview-header">
+									<div class="overview-info">
+										<span class="overview-name">{h.name}</span>
+										<span class="overview-goal">{h.goalCount}/{h.goalPeriod === 'daily' ? 'day' : 'week'}</span>
+									</div>
+									<div class="overview-metrics">
+										<span class="overview-progress">{h.progress}/{h.goalCount}</span>
+										<span class="overview-score">Score: {h.score}</span>
+									</div>
 								</div>
-								<div class="item-actions">
+								<div class="overview-grid">
+									{#each blocks as block (block.startDate)}
+										<div
+											class="block"
+											class:complete={block.complete}
+											title="{block.startDate}: {block.complete ? 'goal met' : 'goal not met'}"
+										></div>
+									{/each}
+								</div>
+								<div class="overview-actions">
 									<button class="btn-sm" onclick={() => handleUnarchive(h.id)}>Unarchive</button>
 									<button class="btn-sm btn-danger" onclick={() => handleDelete(h.id)}>Delete</button>
 								</div>
 							</div>
 						{/each}
-					</div>
+					{/if}
 				{/if}
+				<div class="fab">
+					<button class="btn-fab" onclick={openNew} aria-label="Add habit">+</button>
+				</div>
 			</div>
 		{/if}
 	</main>
@@ -287,6 +286,16 @@
 		flex-direction: column;
 		gap: 12px;
 	}
+	.drag-handle {
+		cursor: grab;
+		color: var(--color-gray-300);
+		font-size: 1.1rem;
+		user-select: none;
+		touch-action: none;
+	}
+	.drag-handle:active {
+		cursor: grabbing;
+	}
 	.overview-card {
 		display: flex;
 		flex-direction: column;
@@ -320,6 +329,19 @@
 		text-transform: uppercase;
 		letter-spacing: 0.05em;
 	}
+	.overview-metrics {
+		display: flex;
+		gap: 10px;
+		align-items: center;
+	}
+	.overview-progress {
+		font-size: 0.85rem;
+		font-weight: 600;
+		color: var(--color-gray-500);
+	}
+	.overview-progress.complete {
+		color: var(--color-green);
+	}
 	.overview-score {
 		font-size: 0.85rem;
 		font-weight: 600;
@@ -343,49 +365,17 @@
 		outline: 2px solid var(--color-primary);
 		outline-offset: -2px;
 	}
-
-	/* Manage view */
-	.manage-header {
-		display: flex;
-		justify-content: space-between;
-		align-items: center;
-		margin-bottom: 12px;
-	}
-	.manage-header h2 {
-		font-size: 1rem;
-		font-weight: 600;
-	}
-	.manage-list {
-		display: flex;
-		flex-direction: column;
-		gap: 6px;
-		margin-bottom: 20px;
-	}
-	.manage-item {
-		display: flex;
-		justify-content: space-between;
-		align-items: center;
-		padding: 12px;
-		background: white;
-		border: 1px solid var(--color-gray-200);
-		border-radius: var(--radius);
-	}
-	.manage-item.archived {
-		opacity: 0.6;
-	}
-	.item-info {
-		display: flex;
-		flex-direction: column;
-		gap: 2px;
-	}
-	.item-meta {
-		font-size: 0.75rem;
-		color: var(--color-gray-400);
-	}
-	.item-actions {
+	.overview-actions {
 		display: flex;
 		gap: 4px;
+		justify-content: flex-end;
+		padding-top: 10px;
+		border-top: 1px solid var(--color-gray-100);
 	}
+	.overview-card.archived {
+		opacity: 0.6;
+	}
+
 	.btn-sm {
 		padding: 6px 10px;
 		border-radius: 6px;

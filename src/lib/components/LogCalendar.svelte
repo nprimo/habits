@@ -1,6 +1,6 @@
 <script lang="ts">
 	import type { Habit } from '$lib/types';
-	import { getLogCountsByDate, addLogEntryForDate, removeLogEntriesForDate } from '$lib/db';
+	import { getLogCountsByDate, logEntry, removeLogEntriesForDate } from '$lib/db';
 
 	let { habit }: { habit: Habit } = $props();
 
@@ -79,7 +79,7 @@
 	function cycleDay(dateStr: string) {
 		const current = logCounts[dateStr] || 0;
 		if (current < habit.goalCount) {
-			addLogEntryForDate(habit.id, dateStr);
+			logEntry(habit.id, dateStr);
 		} else {
 			removeLogEntriesForDate(habit.id, dateStr);
 		}
@@ -95,7 +95,7 @@
 	function cycleWeek(mondayStr: string) {
 		const current = weeks.find(w => w.monday === mondayStr)?.count || 0;
 		if (current < habit.goalCount) {
-			addLogEntryForDate(habit.id, weekMidweek(mondayStr));
+			logEntry(habit.id, weekMidweek(mondayStr));
 		} else {
 			const [y, m, d] = mondayStr.split('-').map(Number);
 			const cursor = new Date(y, m - 1, d);

@@ -206,6 +206,14 @@ describe('period blocks', () => {
 		}
 	});
 
+	it('includes the creation week for weekly habits', () => {
+		const h = createHabit('Weekly Blocks', 1, 'weekly');
+		const blocks = getPeriodBlocks(h.id, 10);
+		const creationWeek = blocks.find(b => b.startDate === '2026-01-12');
+		expect(creationWeek).not.toBeUndefined();
+		expect(creationWeek!.isCurrent).toBe(true);
+	});
+
 	it('marks a period as complete when goal met', () => {
 		const h = createHabit('Block Complete', 1, 'daily');
 		logEntry(h.id);

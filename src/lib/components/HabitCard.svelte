@@ -10,11 +10,13 @@
 <div class="card" class:complete={habit.isComplete}>
 	<div class="header">
 		<div class="info">
-			<span class="drag-handle" aria-label="Drag to reorder">⠿</span>
 			<span class="name">{habit.name}</span>
 			<span class="meta">{habit.goalCount}/{habit.goalPeriod === 'daily' ? 'day' : 'week'}</span>
 		</div>
-		<span class="score">Score: {habit.score}</span>
+		<div class="metrics">
+			<span class="progress" class:complete={habit.isComplete}>{habit.progress}/{habit.goalCount}</span>
+			<span class="score">Score: {habit.score}</span>
+		</div>
 	</div>
 	<div class="grid">
 		{#each blocks as block (block.startDate)}
@@ -57,16 +59,6 @@
 		gap: 10px;
 		align-items: baseline;
 	}
-	.drag-handle {
-		cursor: grab;
-		color: var(--color-gray-300);
-		font-size: 1.1rem;
-		user-select: none;
-		touch-action: none;
-	}
-	.drag-handle:active {
-		cursor: grabbing;
-	}
 	.name {
 		font-weight: 600;
 		font-size: 1rem;
@@ -76,6 +68,19 @@
 		color: var(--color-gray-400);
 		text-transform: uppercase;
 		letter-spacing: 0.05em;
+	}
+	.metrics {
+		display: flex;
+		gap: 10px;
+		align-items: center;
+	}
+	.progress {
+		font-size: 0.85rem;
+		font-weight: 600;
+		color: var(--color-gray-500);
+	}
+	.progress.complete {
+		color: var(--color-green);
 	}
 	.score {
 		font-size: 0.85rem;
@@ -104,6 +109,7 @@
 		display: flex;
 		gap: 6px;
 		justify-content: flex-end;
+		align-items: center;
 	}
 	.btn-log {
 		width: 36px;

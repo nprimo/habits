@@ -183,11 +183,14 @@ export function getActiveHabits(): Habit[] {
 	return rows[0].values.map(mapRowToHabit);
 }
 
-export function getArchivedHabits(): Habit[] {
+export function getArchivedHabits(): HabitWithProgress[] {
 	const d = ensureDB();
 	const rows = d.exec('SELECT id, name, goal_count, goal_period, status, created_at, archived_at, sort_order FROM habits WHERE status = ? ORDER BY created_at', ['archived']);
 	if (!rows.length) return [];
-	return rows[0].values.map(mapRowToHabit);
+	return rows[0].values.map(mapRowToHabit).map(h => {
+		const progress = Math.min(getProgress(h.id), h.goalCount);
+		return { ...h, progress, isComplete: progress >= h.goalCount, score: getScore(h.id) };
+	});
 }
 
 function mapRowToHabit(row: unknown[]): Habit {
@@ -462,9 +465,9 @@ export function getPeriodBlocks(habitId: string, count: number = 10): PeriodBloc
 		const [cy, cm, cd] = createdDate.split('-').map(Number);
 		const created = new Date(cy, cm - 1, cd);
 		const createdDay = created.getDay();
-		const daysUntilMonday = createdDay === 0 ? 1 : (8 - createdDay) % 7;
+		const daysSinceMonday = createdDay === 0 ? 6 : createdDay - 1;
 		const firstMonday = new Date(created);
-		firstMonday.setDate(created.getDate() + daysUntilMonday);
+		firstMonday.setDate(created.getDate() - daysSinceMonday);
 
 		const [fy, fm, fd] = cutoffDate.split('-').map(Number);
 		const cutoff = new Date(fy, fm - 1, fd);
@@ -516,18 +519,6 @@ export function getLogCountsByDate(habitId: string): Record<string, number> {
 		}
 	}
 	return counts;
-}
-
-export function addLogEntryForDate(habitId: string, date: string): LogEntry {
-	const d = ensureDB();
-	const id = crypto.randomUUID();
-	const now = new Date().toISOString();
-	d.run(
-		'INSERT INTO log_entries (id, habit_id, logged_at, created_at) VALUES (?, ?, ?, ?)',
-		[id, habitId, date, now]
-	);
-	persist();
-	return { id, habitId, loggedAt: date, createdAt: now };
 }
 
 export function removeLogEntriesForDate(habitId: string, date: string): void {
