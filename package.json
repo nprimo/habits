@@ -6,20 +6,20 @@
 	"scripts": {
 		"dev": "vite dev",
 		"build": "vite build",
-		"preview": "vite preview",
 		"prepare": "svelte-kit sync || echo ''",
 		"check": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json",
 		"check:watch": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json --watch",
 		"test": "vitest run",
 		"test:watch": "vitest",
-		"deploy": "npm run build && npx wrangler deploy",
-		"deploy:dry": "npm run build && npx wrangler deploy --dry-run"
+		"deploy": "pnpm build && wrangler deploy",
+		"deploy:dry": "pnpm build && wrangler deploy --dry-run",
+		"preview": "pnpm build && wrangler versions upload"
 	},
 	"dependencies": {
-		"@horuse/svelte-dnd": "^1.0.1",
 		"sql.js": "^1.14.1"
 	},
 	"devDependencies": {
+		"wrangler": "^4.92.0",
 		"@sveltejs/adapter-static": "^3.0.10",
 		"@sveltejs/kit": "^2.63.0",
 		"@sveltejs/vite-plugin-svelte": "^7.1.2",
