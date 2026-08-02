@@ -16,7 +16,6 @@
 		"preview": "pnpm build && wrangler versions upload"
 	},
 	"dependencies": {
-		"@horuse/svelte-dnd": "^1.0.1",
 		"sql.js": "^1.14.1"
 	},
 	"devDependencies": {

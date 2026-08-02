@@ -22,18 +22,30 @@
 	function submit(e: Event) {
 		e.preventDefault();
 		if (!name.trim()) return;
+		blurActiveElement();
 		onsave(name.trim(), goalCount, goalPeriod);
 	}
 
+	function blurActiveElement() {
+		if (document.activeElement instanceof HTMLElement) {
+			document.activeElement.blur();
+		}
+	}
+
+	function close() {
+		blurActiveElement();
+		onclose();
+	}
+
 	function keydown(e: KeyboardEvent) {
-		if (e.key === 'Escape') onclose();
+		if (e.key === 'Escape') close();
 	}
 </script>
 
 <svelte:window onkeydown={keydown} />
 
 <!-- svelte-ignore a11y_click_events_have_key_events -->
-<div class="overlay" onclick={onclose} onkeydown={(e) => e.key === 'Escape' && onclose()} role="presentation">
+<div class="overlay" onclick={close} onkeydown={(e) => e.key === 'Escape' && close()} role="presentation">
 	<!-- svelte-ignore a11y_interactive_supports_focus -->
 	<div class="modal" onclick={(e) => e.stopPropagation()} role="dialog">
 		<h2>{habit ? 'Edit Habit' : 'New Habit'}</h2>
@@ -53,7 +65,7 @@
 				</div>
 			</label>
 			<div class="actions">
-				<button type="button" class="btn-cancel" onclick={onclose}>Cancel</button>
+					<button type="button" class="btn-cancel" onclick={close}>Cancel</button>
 				<button type="submit" class="btn-save" disabled={!name.trim()}>
 					{habit ? 'Save' : 'Create'}
 				</button>
@@ -102,6 +114,7 @@
 		color: var(--color-gray-600);
 	}
 	input[type="text"], input[type="number"], select {
+		font-size: 16px;
 		padding: 8px 10px;
 		border: 1px solid var(--color-gray-300);
 		border-radius: var(--radius);

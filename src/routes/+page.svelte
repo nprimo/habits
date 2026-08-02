@@ -1,7 +1,6 @@
 <script lang="ts">
 	import HabitCard from '$lib/components/HabitCard.svelte';
 	import HabitForm from '$lib/components/HabitForm.svelte';
-	import { DndProvider, DndDroppable, DndDraggable, DndController, sortable } from '@horuse/svelte-dnd';
 	import {
 		getHabitsWithProgress,
 		getArchivedHabits,
@@ -24,17 +23,6 @@
 	let habits = $derived.by(() => { refreshKey; return getHabitsWithProgress(); });
 	let incompleteHabits = $derived(habits.filter(h => !h.isComplete));
 	let archived = $derived.by(() => { refreshKey; return getArchivedHabits(); });
-
-	const controller = new DndController();
-	controller.onDrop(({ item, target }) => {
-		const fromIndex = habits.findIndex(h => h.id === item.id);
-		if (fromIndex === -1) return;
-		const updated = [...habits];
-		const [moved] = updated.splice(fromIndex, 1);
-		updated.splice(target.position, 0, moved);
-		reorderHabits(updated.map(h => h.id));
-		refresh();
-	});
 
 	let showForm = $state(false);
 	let editingHabit: Habit | undefined = $state(undefined);
@@ -81,6 +69,15 @@
 			refresh();
 		}
 	}
+
+	function moveHabit(index: number, direction: -1 | 1) {
+		const targetIndex = index + direction;
+		if (targetIndex < 0 || targetIndex >= habits.length) return;
+		const updated = [...habits];
+		[updated[index], updated[targetIndex]] = [updated[targetIndex], updated[index]];
+		reorderHabits(updated.map(h => h.id));
+		refresh();
+	}
 </script>
 
 <div class="app">
@@ -105,9 +102,11 @@
 						<p>All done for today!</p>
 					</div>
 				{:else}
-					{#each incompleteHabits as h (h.id)}
-						<HabitCard habit={h} onlog={() => handleLog(h.id)} />
-					{/each}
+					<div class="today-list">
+						{#each incompleteHabits as h (h.id)}
+							<HabitCard habit={h} onlog={() => handleLog(h.id)} />
+						{/each}
+					</div>
 				{/if}
 				<div class="fab">
 					<button class="btn-fab" onclick={openNew} aria-label="Add habit">+</button>
@@ -118,15 +117,15 @@
 				{#if habits.length === 0 && archived.length === 0}
 					<p class="muted">No habits yet.</p>
 				{:else}
-					<DndProvider {controller}>
-						<DndDroppable id="habits" strategy={sortable()} spacing={8}>
-						{#each habits as h, index (h.id)}
-							<DndDraggable id={h.id} position={index}>
+					{#each habits as h, index (h.id)}
 								{@const blocks = getPeriodBlocks(h.id, 10)}
 								<div class="overview-card" class:complete={h.isComplete}>
 									<div class="overview-header">
 										<div class="overview-info">
-											<span class="drag-handle" aria-label="Drag to reorder">⠿</span>
+											<div class="reorder-actions" aria-label="Reorder habit">
+												<button class="reorder-btn" disabled={index === 0} aria-label="Move up" onclick={() => moveHabit(index, -1)}>↑</button>
+												<button class="reorder-btn" disabled={index === habits.length - 1} aria-label="Move down" onclick={() => moveHabit(index, 1)}>↓</button>
+											</div>
 											<span class="overview-name">{h.name}</span>
 											<span class="overview-goal">{h.goalCount}/{h.goalPeriod === 'daily' ? 'day' : 'week'}</span>
 										</div>
@@ -151,10 +150,7 @@
 										<button class="btn-sm btn-danger" onclick={() => handleDelete(h.id)}>Delete</button>
 									</div>
 								</div>
-							</DndDraggable>
 						{/each}
-						</DndDroppable>
-					</DndProvider>
 
 					{#if archived.length > 0}
 						<h2 class="archived-h2">Archived</h2>
@@ -281,20 +277,37 @@
 	}
 
 	/* Overview view */
+	.today-list {
+		display: flex;
+		flex-direction: column;
+		gap: 12px;
+	}
 	.overview {
 		display: flex;
 		flex-direction: column;
 		gap: 12px;
 	}
-	.drag-handle {
-		cursor: grab;
-		color: var(--color-gray-300);
-		font-size: 1.1rem;
-		user-select: none;
-		touch-action: none;
+	.reorder-actions {
+		display: flex;
+		gap: 8px;
+		align-items: center;
 	}
-	.drag-handle:active {
-		cursor: grabbing;
+	.reorder-btn {
+		width: 36px;
+		height: 36px;
+		padding: 0;
+		border-radius: 8px;
+		background: var(--color-gray-100);
+		color: var(--color-gray-600);
+		font-size: 1.25rem;
+		line-height: 1;
+	}
+	.reorder-btn:disabled {
+		color: var(--color-gray-300);
+		cursor: default;
+	}
+	.reorder-btn:not(:disabled):hover {
+		background: var(--color-gray-200);
 	}
 	.overview-card {
 		display: flex;
