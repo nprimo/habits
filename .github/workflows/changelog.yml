@@ -1,0 +1,25 @@
+name: Changelog
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Create release notes
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          tag="deploy-${GITHUB_SHA:0:12}"
+          if ! gh release view "$tag" >/dev/null 2>&1; then
+            gh release create "$tag" \
+              --target "$GITHUB_SHA" \
+              --title "Deploy ${GITHUB_SHA:0:7}" \
+              --generate-notes
+          fi
