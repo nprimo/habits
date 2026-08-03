@@ -2,6 +2,7 @@
 	"$schema": "node_modules/wrangler/config-schema.json",
 	"name": "habits",
 	"compatibility_date": "2026-06-27",
+	"preview_urls": true,
 	"assets": {
 		"directory": "./build",
 		"not_found_handling": "single-page-application"
