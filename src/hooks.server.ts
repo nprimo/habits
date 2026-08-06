@@ -1,4 +1,4 @@
-import type { Handle } from '@sveltejs/kit';
+import type { Handle, HandleServerError } from '@sveltejs/kit';
 import { jwtVerify, createRemoteJWKSet } from 'jose';
 
 const JWKS_CACHE = new Map<string, ReturnType<typeof createRemoteJWKSet>>();
@@ -17,6 +17,8 @@ export const handle: Handle = async ({ event, resolve }) => {
 	const policyAud = event.platform?.env.POLICY_AUD;
 	const token = event.request.headers.get('cf-access-jwt-assertion');
 
+	console.log('[hooks] path=', event.url.pathname, 'teamDomain=', teamDomain ? 'set' : 'unset', 'policyAud=', policyAud ? 'set' : 'unset', 'token=', token ? 'present' : 'absent');
+
 	if (!teamDomain || !policyAud || !token) {
 		event.locals.user = null;
 		return resolve(event);
@@ -33,9 +35,17 @@ export const handle: Handle = async ({ event, resolve }) => {
 		} else {
 			event.locals.user = null;
 		}
-	} catch {
+	} catch (err) {
+		console.error('[hooks] JWT verification failed:', err);
 		event.locals.user = null;
 	}
 
 	return resolve(event);
+};
+
+export const handleError: HandleServerError = async ({ error, event }) => {
+	console.error('[handleError] path=', event.url.pathname, 'error=', error);
+	return {
+		message: 'Internal Server Error'
+	};
 };

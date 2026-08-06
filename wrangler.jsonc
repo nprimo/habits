@@ -15,5 +15,8 @@
 			"database_name": "habits-db",
 			"database_id": "b81def23-5209-4ed1-a203-ee25d992bced"
 		}
-	]
+	],
+	"observability": {
+		"enabled": true
+	}
 }
