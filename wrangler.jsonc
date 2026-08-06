@@ -6,5 +6,12 @@
 	"assets": {
 		"directory": "./build",
 		"not_found_handling": "single-page-application"
-	}
+	},
+	"d1_databases": [
+		{
+			"binding": "habits_db",
+			"database_name": "habits-db",
+			"database_id": "b81def23-5209-4ed1-a203-ee25d992bced"
+		}
+	]
 }
