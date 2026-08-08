@@ -1,5 +1,7 @@
+import { dev } from '$app/environment';
 import type { Handle, HandleServerError } from '@sveltejs/kit';
 import { jwtVerify, createRemoteJWKSet } from 'jose';
+import { error } from '@sveltejs/kit';
 
 const JWKS_CACHE = new Map<string, ReturnType<typeof createRemoteJWKSet>>();
 
@@ -13,31 +15,41 @@ function getJWKS(teamDomain: string) {
 }
 
 export const handle: Handle = async ({ event, resolve }) => {
-	const teamDomain = event.platform?.env.TEAM_DOMAIN;
-	const policyAud = event.platform?.env.POLICY_AUD;
-	const token = event.request.headers.get('cf-access-jwt-assertion');
-
-	console.log('[hooks] path=', event.url.pathname, 'teamDomain=', teamDomain ? 'set' : 'unset', 'policyAud=', policyAud ? 'set' : 'unset', 'token=', token ? 'present' : 'absent');
-
-	if (!teamDomain || !policyAud || !token) {
+	if (dev) {
 		event.locals.user = null;
 		return resolve(event);
 	}
 
+	const teamDomain = event.platform?.env.TEAM_DOMAIN;
+	const policyAud = event.platform?.env.POLICY_AUD;
+	const token = event.request.headers.get('cf-access-jwt-assertion');
+
+	if (!teamDomain || !policyAud) {
+		console.error('[hooks] auth env not configured: TEAM_DOMAIN or POLICY_AUD missing');
+		throw error(500, { message: 'Server auth misconfigured' });
+	}
+
+	if (!token) {
+		throw error(401, { message: 'Unauthorized' });
+	}
+
+	let payload;
 	try {
-		const { payload } = await jwtVerify(token, getJWKS(teamDomain), {
+		const verified = await jwtVerify(token, getJWKS(teamDomain), {
 			issuer: teamDomain,
 			audience: policyAud
 		});
-		const email = payload.email;
-		if (typeof email === 'string' && email.length > 0) {
-			event.locals.user = { email, plan: 'paid' };
-		} else {
-			event.locals.user = null;
-		}
+		payload = verified.payload;
 	} catch (err) {
 		console.error('[hooks] JWT verification failed:', err);
-		event.locals.user = null;
+		throw error(401, { message: 'Unauthorized' });
+	}
+
+	const email = payload.email;
+	if (typeof email === 'string' && email.length > 0) {
+		event.locals.user = { email, plan: 'paid' };
+	} else {
+		throw error(401, { message: 'Unauthorized' });
 	}
 
 	return resolve(event);
