@@ -1,10 +1,22 @@
 {
 	"$schema": "node_modules/wrangler/config-schema.json",
 	"name": "habits",
+	"main": ".svelte-kit/cloudflare/_worker.js",
 	"compatibility_date": "2026-06-27",
 	"preview_urls": true,
+	"compatibility_flags": ["nodejs_compat"],
 	"assets": {
-		"directory": "./build",
-		"not_found_handling": "single-page-application"
+		"binding": "ASSETS",
+		"directory": ".svelte-kit/cloudflare"
+	},
+	"d1_databases": [
+		{
+			"binding": "habits_db",
+			"database_name": "habits-db",
+			"database_id": "b81def23-5209-4ed1-a203-ee25d992bced"
+		}
+	],
+	"observability": {
+		"enabled": true
 	}
 }
