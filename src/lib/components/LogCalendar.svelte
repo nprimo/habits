@@ -86,19 +86,20 @@
 
 		const [ty, tm] = [viewYear, viewMonth];
 		const firstOfMonth = new Date(ty, tm, 1);
+		const lastOfMonth = new Date(ty, tm + 1, 0);
 		const dom = firstOfMonth.getDay();
 		const diffToMonday = dom === 0 ? -6 : 1 - dom;
 		const cursor = new Date(firstOfMonth);
 		cursor.setDate(cursor.getDate() + diffToMonday);
 
-		while (cursor.getMonth() === tm && cursor.getFullYear() === ty && cursor <= c) {
+		while (cursor <= lastOfMonth && cursor <= c) {
 			const m = new Date(cursor);
-			if (m < createdDate) {
+			const s = new Date(m);
+			s.setDate(m.getDate() + 6);
+			if (s < createdDate) {
 				cursor.setDate(cursor.getDate() + 7);
 				continue;
 			}
-			const s = new Date(m);
-			s.setDate(m.getDate() + 6);
 			const ms = formatDate(m);
 			const ss = formatDate(s);
 
